@@ -1,0 +1,12 @@
+{
+  "name": "verify-delta-force-widget",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json",
+    "test": "node smoke.cjs",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3"
+  }
+}

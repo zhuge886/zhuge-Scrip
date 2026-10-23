@@ -1,0 +1,9 @@
+{
+  "name": "三角洲收益",
+  "version": "1.0.0",
+  "icon": "chart.line.uptrend.xyaxis",
+  "color": "green",
+  "description": "通过腾讯微信授权查询本人昨日收益和哈夫币余额，提供桌面小组件与离线缓存。",
+  "localizedNames": { "zh": "三角洲收益" },
+  "author": { "name": "zhuge886", "homepage": "https://github.com/zhuge886/zhuge-Scrip" }
+}
