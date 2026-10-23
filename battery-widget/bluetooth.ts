@@ -13,6 +13,8 @@
 //   * First use triggers the system Bluetooth permission prompt.
 // Any failure degrades to "no items" — it never fabricates a level.
 // ---------------------------------------------------------------------------
+import { canReadBle, BLE_UNAVAILABLE } from "./capabilities"
+import { report } from "./diagnostics"
 import { BluetoothCentralManager } from "scripting"
 import {
   BATTERY_LEVEL_CHAR_UUID,
@@ -21,13 +23,13 @@ import {
   Settings,
 } from "./model"
 
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`timeout: ${label}`)), ms)
-    ),
-  ])
+async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([p, new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timeout: ${label}`)), ms)
+    })])
+  } finally { if (timer !== undefined) clearTimeout(timer) }
 }
 
 function symbolForName(name: string): string {
@@ -55,6 +57,7 @@ function parseBatteryLevel(bytes: number[] | null | undefined): number | null {
  */
 export async function readBleBatteries(settings: Settings): Promise<BatteryItem[]> {
   if (!settings.enableBle) return []
+  if (!canReadBle()) throw new Error(BLE_UNAVAILABLE)
   const out: BatteryItem[] = []
 
   let peripherals: Awaited<ReturnType<typeof BluetoothCentralManager.retrieveConnectedPeripherals>>
@@ -64,8 +67,9 @@ export async function readBleBatteries(settings: Settings): Promise<BatteryItem[
       6000,
       "retrieveConnectedPeripherals"
     )
-  } catch {
-    return []
+  } catch (error) {
+    report("BLE retrieve", error)
+    throw error
   }
 
   for (const p of peripherals ?? []) {
@@ -74,7 +78,7 @@ export async function readBleBatteries(settings: Settings): Promise<BatteryItem[
       await withTimeout(BluetoothCentralManager.connect(p), 6000, "connect")
       await withTimeout(p.discoverServices([BATTERY_SERVICE_UUID]), 6000, "discoverServices")
       const service = (p.services ?? []).find(
-        (s: any) => s.uuid.toUpperCase().includes(BATTERY_SERVICE_UUID)
+        s => s.uuid.toUpperCase().includes(BATTERY_SERVICE_UUID)
       )
       if (!service) throw new Error("no battery service")
 
@@ -84,11 +88,11 @@ export async function readBleBatteries(settings: Settings): Promise<BatteryItem[
         "discoverCharacteristics"
       )
       const char = (service.characteristics ?? []).find(
-        (c: any) => c.uuid.toUpperCase().includes(BATTERY_LEVEL_CHAR_UUID)
+        c => c.uuid.toUpperCase().includes(BATTERY_LEVEL_CHAR_UUID)
       )
       if (!char || !char.properties.includes("read")) throw new Error("no readable 0x2A19")
 
-      const value: any = await withTimeout(p.readValue(char), 6000, "readValue")
+      const value = await withTimeout(p.readValue(char), 6000, "readValue")
       const level = parseBatteryLevel(value?.toIntArray())
 
       out.push({
@@ -103,6 +107,7 @@ export async function readBleBatteries(settings: Settings): Promise<BatteryItem[
         note: level == null ? "battery level unreadable" : undefined,
       })
     } catch (e) {
+      report(`BLE ${name}`, e)
       // Device is connected but we couldn't read a level — record honestly.
       out.push({
         id: p.id,
@@ -117,7 +122,7 @@ export async function readBleBatteries(settings: Settings): Promise<BatteryItem[
       })
     } finally {
       try {
-        await BluetoothCentralManager.disconnect(p)
+        await withTimeout(BluetoothCentralManager.disconnect(p), 3000, "disconnect")
       } catch {
         /* ignore */
       }

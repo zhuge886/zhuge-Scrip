@@ -3,6 +3,7 @@
 // The ring is drawn with two Circle shapes (track + trimmed arc) so we get
 // full control over color, thickness and the "-- when unknown" behavior.
 // ---------------------------------------------------------------------------
+import { report } from "./diagnostics"
 import { ZStack, VStack, HStack, Text, Image, Circle } from "scripting"
 import { BatteryItem, Settings } from "./model"
 import { formatPercent } from "./battery"
@@ -70,11 +71,11 @@ export interface CellProps {
   ringSize: number
 }
 
-export function DeviceCell({ item, settings, ringSize }: CellProps) {
+function FullDeviceCell({ item, settings, ringSize }: CellProps) {
   const faded = !item.connected && item.kind !== "phone"
   return (
-    <VStack spacing={4} alignment="center" opacity={faded ? 0.55 : 1}>
-      <BatteryRing item={item} settings={settings} size={ringSize} />
+    <VStack key={item.id} spacing={4} alignment="center" opacity={faded ? 0.55 : 1}>
+      {BatteryRing({ item, settings, size: ringSize })}
       <Text
         font="caption"
         foregroundStyle={COLORS.subtext}
@@ -85,4 +86,17 @@ export function DeviceCell({ item, settings, ringSize }: CellProps) {
       </Text>
     </VStack>
   )
+}
+
+// Both components are pure (no hooks). Eager construction catches JS render
+// errors here; merely wrapping <DeviceCell /> in try/catch would not catch them.
+export function DeviceCell(props: CellProps) {
+  try { return FullDeviceCell(props) }
+  catch (error) {
+    report("DeviceCell", error)
+    return <VStack key={props.item.id}><Text>{props.item.name}</Text>
+      <Text>{formatPercent(props.item.level)} · {props.item.charge}</Text>
+      <Text>DeviceCell error: {String(error)}</Text>
+    </VStack>
+  }
 }

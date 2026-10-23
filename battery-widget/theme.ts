@@ -2,10 +2,11 @@
 // Colors + thresholds. Colors use system color names and DynamicShapeStyle
 // ({ light, dark }) so the widget adapts to light / dark mode automatically.
 // ---------------------------------------------------------------------------
+import type { ShapeStyle, DynamicShapeStyle } from "scripting"
 import { ChargeState, Settings } from "./model"
 
 /** A value accepted by foregroundStyle / stroke / fill. */
-export type ColorValue = string | { light: string; dark: string }
+export type ColorValue = ShapeStyle | DynamicShapeStyle
 
 export const COLORS = {
   good: "systemGreen",
@@ -19,7 +20,7 @@ export const COLORS = {
   subtext: "secondaryLabel",
   offline: "systemGray",
   cardBg: { light: "systemBackground", dark: "secondarySystemBackground" } as ColorValue,
-}
+} as const
 
 /**
  * Ring / icon color from battery state.

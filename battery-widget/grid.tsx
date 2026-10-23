@@ -63,7 +63,7 @@ export function BatteryGrid({ items, settings, family }: GridProps) {
         rows.map((row, idx) => (
           <HStack key={idx} spacing={16} alignment="center">
             {row.map(item => (
-              <DeviceCell key={item.id} item={item} settings={settings} ringSize={ringSize} />
+              DeviceCell({ item, settings, ringSize })
             ))}
           </HStack>
         ))

@@ -1,10 +1,19 @@
 # 多设备电量监控小组件（Scripting / iOS）
 
 基于 iOS **Scripting App**（TypeScript / TSX）实现的桌面小组件。无需独立 App、无需 Apple
-Developer 付费账户。所有 API 均来自 Scripting 官方文档（本仓库代码已用官方文档逐项核对，
-并通过 `tsc` 做过类型/语法检查）。
+Developer 付费账户。API 对照 Scripting 官方文档；开发环境静态检查与 iPhone 真机验证的区别见下方修复记录。
 
 > 核心原则：**只展示真实可读取的数据，读不到就显示 `--`，绝不编造电量。**
+
+## 1.0.1 白屏修复与桌面使用
+
+已为主界面和桌面小组件增加独立降级、日志和错误提示；BLE 只在用户操作后读取。
+请先用最新版根目录 `install.tsx` 更新（全部 **15/15** 文件），再添加桌面小组件：
+**长按桌面 → 添加小组件 → Scripting → 编辑小组件 → 选择 Battery Monitor**。
+无需先扫描蓝牙即可显示手机电量。iOS 不允许脚本自动把小组件摆放到桌面。
+
+[修复原因、分阶段诊断、已验证项及真机待验证项](VERIFICATION.md)。
+本轮没有连接 iPhone；静态检查使用文档衍生类型合同，不能替代当前 App 官方类型和原生渲染验证。
 
 ---
 
@@ -85,7 +94,7 @@ Apple Watch / iPad 若未来出现可用的第三方读取 API，可在此处接
 2. 新建项目会自动生成 `index.tsx`（以及 `script.json`）。把本仓库 `battery-widget/`
    里的每个文件内容，逐个在项目中新建同名文件并粘贴：
    `model.ts`、`store.ts`、`battery.ts`、`bluetooth.ts`、`snapshot.ts`、`theme.ts`、
-   `ui.tsx`、`grid.tsx`、`widget.tsx`、`app_intents.tsx`，并覆盖 `index.tsx`、`script.json`。
+   `ui.tsx`、`grid.tsx`、`widget.tsx`、`app_intents.tsx`、`dashboard.tsx`、`diagnostics.ts`、`capabilities.ts`，并覆盖 `index.tsx`、`script.json`。
    - 文件名必须完全一致（尤其入口文件 `index.tsx` / `widget.tsx` / `app_intents.tsx`）。
    - 相对 import（如 `./model`）要求这些文件在**同一项目**里。
 3. 若用 iCloud/文件 App 同步：把整个 `battery-widget` 文件夹放入 Scripting 可访问的目录，

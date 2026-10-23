@@ -2,7 +2,7 @@
   "icon": "battery.100.bolt",
   "color": "green",
   "name": "Battery Monitor",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Multi-device battery widget: iPhone battery (live) plus cached levels for standard BLE Battery-Service devices. Honest '--' for devices iOS does not expose to third-party scripts (e.g. AirPods).",
   "localizedNames": {
     "zh": "多设备电量监控"

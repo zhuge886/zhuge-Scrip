@@ -4,7 +4,8 @@
 // cached" split, and never invents levels.
 // ---------------------------------------------------------------------------
 import { BatteryItem, Settings, Snapshot } from "./model"
-import { readBleBatteries } from "./bluetooth"
+import { canReadBle, BLE_UNAVAILABLE } from "./capabilities"
+import { report } from "./diagnostics"
 
 /** Informational AirPods cell — permanently "--" (iOS limitation). */
 export function airpodsPlaceholder(): BatteryItem {
@@ -25,11 +26,15 @@ export function airpodsPlaceholder(): BatteryItem {
 export async function buildSnapshotItems(settings: Settings): Promise<BatteryItem[]> {
   const items: BatteryItem[] = []
   if (settings.showAirpodsPlaceholder) items.push(airpodsPlaceholder())
+  if (!settings.enableBle) return items
+  if (!canReadBle()) throw new Error(BLE_UNAVAILABLE)
   try {
+    const { readBleBatteries } = await import("./bluetooth")
     const ble = await readBleBatteries(settings)
     items.push(...ble)
-  } catch {
-    /* degrade silently; placeholder (if any) still shown */
+  } catch (error) {
+    report("BLE snapshot", error)
+    throw error
   }
   return items
 }

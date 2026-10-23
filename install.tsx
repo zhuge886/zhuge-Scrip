@@ -34,7 +34,7 @@ const PROJECT = "Battery Monitor"
 const FILES = [
   "script.json", "model.ts", "store.ts", "battery.ts", "bluetooth.ts",
   "snapshot.ts", "theme.ts", "ui.tsx", "grid.tsx", "widget.tsx",
-  "app_intents.tsx", "index.tsx",
+  "app_intents.tsx", "diagnostics.ts", "capabilities.ts", "dashboard.tsx", "index.tsx",
 ]
 
 function rawUrl(file: string): string {
@@ -53,7 +53,7 @@ function Installer() {
     setBusy(true)
     setLog([])
     try {
-      if (OWNER === "YOUR_GITHUB_USERNAME") {
+      if (OWNER.trim() === "YOUR_GITHUB_USERNAME") {
         add("⚠️ Edit OWNER/REPO/BRANCH at the top of this script first.")
         setBusy(false)
         return

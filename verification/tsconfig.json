@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "target": "ES2020", "module": "commonjs", "strict": true, "jsx": "preserve", "skipLibCheck": false, "noEmit": true },
+  "include": ["../battery-widget/**/*.ts", "../battery-widget/**/*.tsx", "scripting.d.ts", "../install.tsx"]
+}
