@@ -16,7 +16,7 @@
 // For a PRIVATE repo, use the GitHub API (Settings → GitHub token) instead.
 // ===========================================================================
 import {
-  fetch, FileManager, Navigation, NavigationStack, List, Section,
+  fetch, Navigation, NavigationStack, List, Section,
   Button, Text, VStack, Script, useState,
 } from "scripting"
 
@@ -29,12 +29,12 @@ const BRANCH = "main"
 // Folder inside the repo that holds the project files ("" if at repo root).
 const SUBDIR = "battery-widget"
 // Target project name created on-device.
-const PROJECT = "Battery Monitor"
+const PROJECT = "电量监控"
 
 const FILES = [
   "script.json", "model.ts", "store.ts", "battery.ts", "bluetooth.ts",
   "snapshot.ts", "theme.ts", "ui.tsx", "grid.tsx", "widget.tsx",
-  "app_intents.tsx", "diagnostics.ts", "capabilities.ts", "dashboard.tsx", "index.tsx",
+  "app_intents.tsx", "copy.ts", "async.ts", "audio.ts", "diagnostics.ts", "capabilities.ts", "dashboard.tsx", "index.tsx",
 ]
 
 function rawUrl(file: string): string {
@@ -54,36 +54,32 @@ function Installer() {
     setLog([])
     try {
       if (OWNER.trim() === "YOUR_GITHUB_USERNAME") {
-        add("⚠️ Edit OWNER/REPO/BRANCH at the top of this script first.")
+        add("请先填写脚本顶部的仓库信息。")
         setBusy(false)
         return
       }
-      const dest = `${FileManager.scriptsDirectory}/${PROJECT}`
-      if (!FileManager.existsSync(dest)) {
-        FileManager.createDirectorySync(dest, true)
-      }
-      add(`Installing into: ${PROJECT}`)
-      let ok = 0
+      // 完整下载并校验清单后才写入，避免网络中断留下混合版本。
+      const downloaded: { file: string; content: string }[] = []
       for (const file of FILES) {
-        const url = rawUrl(file)
-        try {
-          const res = await fetch(url)
-          if (!res.ok) {
-            add(`✗ ${file} (HTTP ${res.status})`)
-            continue
-          }
-          const text = await res.text()
-          FileManager.writeAsStringSync(`${dest}/${file}`, text)
-          ok++
-          add(`✓ ${file}`)
-        } catch (e) {
-          add(`✗ ${file} (${String(e)})`)
-        }
+        const response = await fetch(rawUrl(file))
+        if (!response.ok) throw new Error(`${file} 下载失败（HTTP ${response.status}）`)
+        downloaded.push({ file, content: await response.text() })
+        add(`已下载 ${downloaded.length}/${FILES.length}：${file}`)
       }
-      add(`Done: ${ok}/${FILES.length} files.`)
-      add("Now FULLY quit & reopen Scripting to see the project.")
+      const manifest = downloaded.find(entry => entry.file === "script.json")!
+      JSON.parse(manifest.content)
+      const dest = `${FileManager.scriptsDirectory}/${PROJECT}`
+      if (!FileManager.existsSync(dest)) FileManager.createDirectorySync(dest, true)
+      let ok = 0
+      for (const entry of downloaded.filter(e => e.file !== "script.json").concat([manifest])) {
+        FileManager.writeAsStringSync(`${dest}/${entry.file}`, entry.content)
+        ok++
+      }
+      add(`已完成：${ok}/${FILES.length} 个文件。`)
+      add("请重新打开 Scripting，选择“电量监控”运行。")
     } catch (e) {
-      add("Failed: " + String(e))
+      console.error("[电量监控] 安装失败", e)
+      add("安装失败，请检查网络或控制台后重试。")
     } finally {
       setBusy(false)
     }
@@ -92,23 +88,24 @@ function Installer() {
   return (
     <NavigationStack>
       <List
-        navigationTitle="Install Battery Monitor"
-        toolbar={{ cancellationAction: <Button title="Done" action={dismiss} /> }}
+        navigationTitle="安装电量监控"
+        toolbar={{ cancellationAction: <Button title="完成" action={dismiss} /> }}
       >
         <Section
-          header={<Text>Source</Text>}
+          header={<Text>安装来源</Text>}
           footer={<Text>{`${OWNER}/${REPO}@${BRANCH}`}</Text>}
         >
           <Button
-            title={busy ? "Installing…" : "Install / Update"}
+            title={busy ? "正在安装…" : "安装或更新"}
             action={install}
+            disabled={busy}
           />
         </Section>
-        <Section header={<Text>Log</Text>}>
+        <Section header={<Text>安装记录</Text>}>
           <VStack alignment="leading" spacing={3} padding={6}>
             {log.length === 0 ? (
               <Text foregroundStyle="secondaryLabel" font="footnote">
-                Tap Install / Update to begin.
+                点击“安装或更新”开始。
               </Text>
             ) : (
               log.map((l, i) => (

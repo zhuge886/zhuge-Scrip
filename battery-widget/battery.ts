@@ -9,14 +9,14 @@ import { Device } from "scripting"
 import { BatteryItem, ChargeState, DeviceKind } from "./model"
 
 export function readPhoneLevel(): number | null {
-  const lvl = attempt("Device.batteryLevel", () => Device.batteryLevel, -1)
+  const lvl = attempt("电量读取", () => Device.batteryLevel, -1)
   // iOS returns -1 when the level cannot be determined (e.g. Simulator).
   if (typeof lvl !== "number" || !Number.isFinite(lvl) || lvl < 0) return null
   return Math.max(0, Math.min(1, lvl))
 }
 
 export function readPhoneCharge(): ChargeState {
-  const s = attempt("Device.batteryState", () => Device.batteryState, "unknown")
+  const s = attempt("充电状态读取", () => Device.batteryState, "unknown")
   if (s === "full" || s === "charging" || s === "unplugged") return s
   return "unknown"
 }
@@ -36,11 +36,12 @@ export function buildPhoneItem(): BatteryItem {
   const level = readPhoneLevel()
   const charge = readPhoneCharge()
   const kind: DeviceKind = "phone"
+  const isiPad = attempt("设备类型读取", () => Device.isiPad, false)
   return {
     id: "phone",
-    name: attempt("Device.isiPad", () => Device.isiPad, false) ? "iPad" : "iPhone",
+    name: isiPad ? "iPad" : "iPhone",
     kind,
-    symbol: phoneSymbol(level, charge),
+    symbol: isiPad ? "ipad" : "iphone",
     level,
     charge,
     connected: true,

@@ -11,11 +11,12 @@
 //   * Must run in an interactive context (index.tsx) or an app-intent, never
 //     inside widget.tsx (widgets are one-shot and can't reliably scan).
 //   * First use triggers the system Bluetooth permission prompt.
-// Any failure degrades to "no items" — it never fabricates a level.
+// Failures are reported to the caller; unknown levels are never fabricated.
 // ---------------------------------------------------------------------------
 import { canReadBle, BLE_UNAVAILABLE } from "./capabilities"
-import { report } from "./diagnostics"
-import { BluetoothCentralManager } from "scripting"
+import { report, resolveDiagnostic } from "./diagnostics"
+import { withTimeout } from "./async"
+// BluetoothCentralManager 是宿主全局 API。
 import {
   BATTERY_LEVEL_CHAR_UUID,
   BATTERY_SERVICE_UUID,
@@ -23,13 +24,9 @@ import {
   Settings,
 } from "./model"
 
-async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([p, new Promise<T>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`timeout: ${label}`)), ms)
-    })])
-  } finally { if (timer !== undefined) clearTimeout(timer) }
+function matchesUuid(uuid: string, short: string): boolean {
+  const value = uuid.replace(/-/g, "").toUpperCase()
+  return value === short || value === `0000${short}00001000800000805F9B34FB`
 }
 
 function symbolForName(name: string): string {
@@ -47,7 +44,7 @@ function symbolForName(name: string): string {
 function parseBatteryLevel(bytes: number[] | null | undefined): number | null {
   if (!bytes || bytes.length === 0) return null
   const pct = bytes[0]
-  if (typeof pct !== "number" || pct < 0 || pct > 100) return null
+  if (!Number.isInteger(pct) || pct < 0 || pct > 100) return null
   return pct / 100
 }
 
@@ -56,43 +53,49 @@ function parseBatteryLevel(bytes: number[] | null | undefined): number | null {
  * standard Battery Service. Safe to call from index.tsx / app_intents.tsx.
  */
 export async function readBleBatteries(settings: Settings): Promise<BatteryItem[]> {
-  if (!settings.enableBle) return []
+  if (!settings.enableBle || settings.maxItems <= 1) return []
   if (!canReadBle()) throw new Error(BLE_UNAVAILABLE)
+  if (typeof BluetoothCentralManager === "undefined") throw new Error("当前版本未提供蓝牙读取接口")
+  resolveDiagnostic("配件读取")
   const out: BatteryItem[] = []
+  const deadline = Date.now() + 20_000
+  const remaining = () => Math.max(1, Math.min(4000, deadline - Date.now()))
 
   let peripherals: Awaited<ReturnType<typeof BluetoothCentralManager.retrieveConnectedPeripherals>>
   try {
     peripherals = await withTimeout(
       BluetoothCentralManager.retrieveConnectedPeripherals([BATTERY_SERVICE_UUID]),
-      6000,
-      "retrieveConnectedPeripherals"
+      remaining(),
+      "获取已连接配件"
     )
   } catch (error) {
-    report("BLE retrieve", error)
+    report("配件读取", error)
     throw error
   }
 
-  for (const p of peripherals ?? []) {
-    const name = p.name ?? "BLE Device"
+  const unique = [...new Map((peripherals ?? []).map(p => [p.id, p])).values()]
+  for (const p of unique.slice(0, Math.max(0, settings.maxItems - 1))) {
+    if (Date.now() >= deadline) { report("配件读取", "已达到读取时间上限"); break }
+    const name = p.name?.trim() || "蓝牙配件"
     try {
-      await withTimeout(BluetoothCentralManager.connect(p), 6000, "connect")
-      await withTimeout(p.discoverServices([BATTERY_SERVICE_UUID]), 6000, "discoverServices")
+      await withTimeout(BluetoothCentralManager.connect(p), remaining(), "连接配件")
+      await withTimeout(p.discoverServices([BATTERY_SERVICE_UUID]), remaining(), "发现电池服务")
       const service = (p.services ?? []).find(
-        s => s.uuid.toUpperCase().includes(BATTERY_SERVICE_UUID)
+        s => matchesUuid(s.uuid, BATTERY_SERVICE_UUID)
       )
-      if (!service) throw new Error("no battery service")
+      if (!service) throw new Error("配件未提供标准电池服务")
 
       await withTimeout(
         p.discoverCharacteristics(service, [BATTERY_LEVEL_CHAR_UUID]),
-        6000,
-        "discoverCharacteristics"
+        remaining(),
+        "发现电量特征"
       )
       const char = (service.characteristics ?? []).find(
-        c => c.uuid.toUpperCase().includes(BATTERY_LEVEL_CHAR_UUID)
+        c => matchesUuid(c.uuid, BATTERY_LEVEL_CHAR_UUID)
       )
-      if (!char || !char.properties.includes("read")) throw new Error("no readable 0x2A19")
+      if (!char || !char.properties.includes("read")) throw new Error("电量特征不支持读取")
 
-      const value = await withTimeout(p.readValue(char), 6000, "readValue")
+      const value = await withTimeout(p.readValue(char), remaining(), "读取配件电量")
       const level = parseBatteryLevel(value?.toIntArray())
 
       out.push({
@@ -104,10 +107,10 @@ export async function readBleBatteries(settings: Settings): Promise<BatteryItem[
         charge: "unknown",
         connected: true,
         updatedAt: Date.now(),
-        note: level == null ? "battery level unreadable" : undefined,
+        note: level == null ? "配件电量不可读取" : undefined,
       })
     } catch (e) {
-      report(`BLE ${name}`, e)
+      report("配件读取", new Error(`${name}: ${String(e)}`))
       // Device is connected but we couldn't read a level — record honestly.
       out.push({
         id: p.id,
@@ -118,11 +121,11 @@ export async function readBleBatteries(settings: Settings): Promise<BatteryItem[
         charge: "unknown",
         connected: true,
         updatedAt: Date.now(),
-        note: "no standard battery service",
+        note: "配件电量读取失败",
       })
     } finally {
       try {
-        await withTimeout(BluetoothCentralManager.disconnect(p), 3000, "disconnect")
+        await withTimeout(BluetoothCentralManager.disconnect(p), 2000, "断开脚本连接")
       } catch {
         /* ignore */
       }

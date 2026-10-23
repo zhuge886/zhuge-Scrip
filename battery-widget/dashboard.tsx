@@ -1,179 +1,138 @@
-// ---------------------------------------------------------------------------
-// Interactive app (main entry). Here hooks + async + Bluetooth all work.
-// Responsibilities:
-//   * show live iPhone battery + cached device snapshot
-//   * "Scan & refresh" -> read BLE Battery-Service devices, save snapshot,
-//     reload widgets
-//   * edit settings
-//   * preview the widget
-//   * document the real iOS capability limits honestly
-// ---------------------------------------------------------------------------
 import {
   Navigation, NavigationStack, List, Section, Text, HStack, VStack, Button,
-  Toggle, Stepper, Spacer, Device, Widget, useState, useEffect,
+  Toggle, Stepper, Spacer, Device, Widget, useState, useEffect, useRef,
 } from "scripting"
-import { DEFAULT_SETTINGS, Settings, Snapshot, BatteryItem } from "./model"
-import { loadSettings, saveSettings, loadSnapshot, saveSnapshot } from "./store"
-import { buildPhoneItem } from "./battery"
+import { DEFAULT_SETTINGS } from "./model"
+import type { Settings, Snapshot, BatteryItem } from "./model"
+import { loadSettings, saveSettings, loadSnapshot, saveSnapshot, clearSnapshot } from "./store"
+import { buildPhoneItem, formatPercent } from "./battery"
 import { buildSnapshotItems, composeItems } from "./snapshot"
-import { DeviceCell } from "./ui"
+import { BatteryGrid } from "./grid"
 import { attempt, report, diagnosticText } from "./diagnostics"
 import { canReadBle, BLE_UNAVAILABLE } from "./capabilities"
-
-function fmtTime(ms: number): string {
-  const d = new Date(ms)
-  const p = (n: number) => (n < 10 ? "0" + n : "" + n)
-  return `${p(d.getHours())}:${p(d.getMinutes())}`
-}
+import { APP_TITLE, chargeText, timeText } from "./copy"
 
 export function Dashboard({ stage = 6 }: { stage?: number }) {
   const dismiss = Navigation.useDismiss()
   const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS })
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [phone, setPhone] = useState<BatteryItem>({ id: "phone", name: "iPhone", kind: "phone", symbol: "iphone", level: null, charge: "unknown", connected: true, updatedAt: Date.now() })
-  const [scanning, setScanning] = useState(false)
-  const [msg, setMsg] = useState<string>("")
-
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState("")
   const [errors, setErrors] = useState("")
   const [bleAllowed, setBleAllowed] = useState(false)
-  const updateErrors = () => setErrors(diagnosticText())
+  const [audioMsg, setAudioMsg] = useState("")
+  const active = useRef(true)
+  const working = useRef(false)
+  const updateErrors = () => { if (active.current) setErrors(diagnosticText()) }
+  const reload = () => { attempt("小组件刷新", () => Widget.reloadAll(), undefined); updateErrors() }
+  const refreshPhone = () => { if (active.current) { setPhone(buildPhoneItem()); updateErrors() } }
 
-  // Concrete state values: do not rely on React lazy initializer semantics.
-  // Restore data after the first, dependency-free UI has rendered.
   useEffect(() => {
+    active.current = true
     if (stage >= 1) { setSettings(loadSettings()); setSnapshot(loadSnapshot()) }
-    if (stage >= 2) setPhone(buildPhoneItem())
+    if (stage >= 2) refreshPhone()
     if (stage >= 6) setBleAllowed(canReadBle())
     updateErrors()
+    return () => { active.current = false }
   }, [])
-
-  // Live iPhone battery updates while the app is open.
   useEffect(() => {
     if (stage < 5) return
-    const refresh = () => { setPhone(buildPhoneItem()); updateErrors() }
-    const levelAdded = attempt("Battery level listener", () => { Device.addBatteryLevelListener(refresh); return true }, false)
-    const stateAdded = attempt("Battery state listener", () => { Device.addBatteryStateListener(refresh); return true }, false)
+    const levelAdded = attempt("电量变化监听", () => { Device.addBatteryLevelListener(refreshPhone); return true }, false)
+    const stateAdded = attempt("充电变化监听", () => { Device.addBatteryStateListener(refreshPhone); return true }, false)
     updateErrors()
     return () => {
-      if (levelAdded) attempt("Remove level listener", () => Device.removeBatteryLevelListener(refresh), undefined)
-      if (stateAdded) attempt("Remove state listener", () => Device.removeBatteryStateListener(refresh), undefined)
+      if (levelAdded) attempt("移除电量监听", () => Device.removeBatteryLevelListener(refreshPhone), undefined)
+      if (stateAdded) attempt("移除充电监听", () => Device.removeBatteryStateListener(refreshPhone), undefined)
     }
   }, [])
-
-  const patch = (p: Partial<Settings>) => {
-    const next = { ...settings, ...p }
+  const patch = (changes: Partial<Settings>) => {
+    const next = { ...settings, ...changes }
     setSettings(next)
-    saveSettings(next)
+    if (saveSettings(next)) reload()
     updateErrors()
   }
-
-  const items = stage >= 3 ? attempt("Compose devices", () => composeItems(phone, snapshot, settings), [phone]) : [phone]
-
-  const scan = async () => {
-    if (scanning) return
-    if (!canReadBle()) { setBleAllowed(false); setMsg(BLE_UNAVAILABLE); return }
-    setScanning(true)
-    setMsg("Scanning…")
-    try {
-      const built = await buildSnapshotItems(settings)
-      const snap = saveSnapshot(built)
-      setSnapshot(snap)
-      Widget.reloadAll()
-      const readable = built.filter(i => i.level != null).length
-      setMsg(`Done. ${readable} device(s) reported a battery level.`)
-    } catch (e) {
-      setMsg(report("Scan failed", e))
-    } finally {
-      setScanning(false)
-      updateErrors()
-    }
+  const items = stage >= 3 ? attempt("配件数据组合", () => composeItems(phone, snapshot, settings), [phone]) : [phone]
+  // 独立于控件重绘的锁，防止连续点击启动多个蓝牙任务。
+  const runAction = async (task: () => Promise<void>, scope = "配件读取") => {
+    if (working.current) return
+    working.current = true; setBusy(true)
+    try { await task() }
+    catch (error) { if (active.current) setMsg(report(scope, error)) }
+    finally { working.current = false; if (active.current) { setBusy(false); refreshPhone(); updateErrors() } }
   }
-
-  return (
-    <NavigationStack>
-      <List
-        navigationTitle="Battery Monitor"
-        toolbar={{ cancellationAction: <Button title="Done" action={dismiss} /> }}
-      >
-        {errors ? <Section header={<Text>Diagnostics</Text>}><Text>{errors}</Text></Section> : null}
-        <Section header={<Text>Preview</Text>}>
-          <VStack spacing={10} padding={8} frame={{ maxWidth: "infinity" }}>
-            {[items.slice(0, 2), items.slice(2, 4)].map((row, i) =>
-              row.length ? (
-                <HStack key={i} spacing={16} alignment="center">
-                  {row.map(it => (
-                    stage >= 4 ? DeviceCell({ item: it, settings, ringSize: 56 }) : <Text key={it.id}>{it.name}: {it.level == null ? "--" : Math.round(it.level * 100) + "%"} · {it.charge}</Text>
-                  ))}
-                </HStack>
-              ) : null
-            )}
-          </VStack>
-        </Section>
-
-        {stage >= 6 ? <Section header={<Text>Actions</Text>} footer={<Text>{msg || (!bleAllowed ? BLE_UNAVAILABLE : "BLE ready (Scripting PRO). Reads connected standard Battery-Service devices on demand.")}</Text>}>
-          <Button
-            title={scanning ? "Scanning…" : "Scan & refresh now"}
-            action={scan}
-            disabled={scanning || !bleAllowed || !settings.enableBle}
-          />
-          <Button
-            title="Preview widget (medium)"
-            action={async () => { try { await Widget.preview({ family: "systemMedium" }) } catch (e) { setMsg(report("Widget preview", e)) } }}
-          />
-        </Section> : null}
-
-        <Section header={<Text>Status</Text>}>
-          <HStack>
-            <Text>iPhone</Text><Spacer />
-            <Text foregroundStyle="secondaryLabel">
-              {phone.level == null ? "--" : Math.round(phone.level * 100) + "%"} · {phone.charge}
-            </Text>
-          </HStack>
-          <HStack>
-            <Text>Last snapshot</Text><Spacer />
-            <Text foregroundStyle="secondaryLabel">
-              {snapshot ? fmtTime(snapshot.builtAt) : "never"}
-            </Text>
-          </HStack>
-        </Section>
-
-        {stage >= 6 ? <Section header={<Text>Settings</Text>}>
-          <Toggle
-            title="Read BLE battery devices"
-            value={settings.enableBle}
-            disabled={!bleAllowed}
-            onChanged={(v: boolean) => patch({ enableBle: v })}
-          />
-          <Toggle
-            title="Show AirPods info cell (always --)"
-            value={settings.showAirpodsPlaceholder}
-            onChanged={(v: boolean) => patch({ showAirpodsPlaceholder: v })}
-          />
-          <Toggle
-            title="Hide offline devices"
-            value={settings.hideOffline}
-            onChanged={(v: boolean) => patch({ hideOffline: v })}
-          />
-          <Stepper
-            title={`Max items: ${settings.maxItems}`}
-            onIncrement={() => patch({ maxItems: Math.min(4, settings.maxItems + 1) })}
-            onDecrement={() => patch({ maxItems: Math.max(1, settings.maxItems - 1) })}
-          />
-          <Stepper
-            title={`Stale after: ${settings.staleMinutes} min`}
-            onIncrement={() => patch({ staleMinutes: Math.min(720, settings.staleMinutes + 15) })}
-            onDecrement={() => patch({ staleMinutes: Math.max(15, settings.staleMinutes - 15) })}
-          />
-          <Button title="Reset settings" action={() => { setSettings(DEFAULT_SETTINGS); saveSettings(DEFAULT_SETTINGS); updateErrors() }} />
-        </Section> : null}
-
-        <Section header={<Text>What this can read</Text>}>
-          <Text font="footnote">✅ iPhone battery % + charging state (live; -- when unavailable).</Text>
-          <Text font="footnote">⚠️ BLE devices exposing the standard Battery Service (0x180F): read on demand here, then cached for the widget. Real-device only.</Text>
-          <Text font="footnote">❌ AirPods L/R/case and classic Bluetooth audio: iOS gives no public API to third-party scripts, so they always show "--". No faked values.</Text>
-        </Section>
-      </List>
-    </NavigationStack>
-  )
+  const readAccessories = () => runAction(async () => {
+    if (!canReadBle()) { setBleAllowed(false); setMsg(BLE_UNAVAILABLE); return }
+    if (!settings.enableBle || settings.maxItems <= 1) return
+    setMsg("正在读取已连接配件…")
+    const built = await buildSnapshotItems(settings)
+    // 耳机音频输出只标明输出设备，不伪造电量；保留用户最近主动查询的结果。
+    const audio = (snapshot?.items ?? []).filter(it => it.id.startsWith("audio-output:"))
+    const saved = saveSnapshot([...built, ...audio])
+    reload()
+    if (!active.current) return
+    setSnapshot(saved)
+    const readable = built.filter(it => it.level != null).length
+    setMsg(built.length ? `已更新 ${built.length} 个配件，其中 ${readable} 个返回电量。` : "未找到提供标准电池服务的已连接配件。AirPods 不在此读取范围内。")
+  })
+  const inspectAudio = () => runAction(async () => {
+    setMsg("正在检查耳机音频输出…")
+    const { readHeadphoneRoute } = await import("./audio")
+    const audio = await readHeadphoneRoute()
+    const rest = (snapshot?.items ?? []).filter(it => !it.id.startsWith("audio-output:"))
+    const saved = saveSnapshot([...rest, ...audio])
+    reload()
+    if (!active.current) return
+    setSnapshot(saved)
+    const text = audio.length ? `当前耳机输出：${audio.map(it => it.name).join("、")}。当前接口未提供其电量，圆环显示 --。` : "当前音频路由未返回耳机输出；这不代表耳机未连接。可播放音频并选择耳机后重试。"
+    setAudioMsg(text); setMsg(text)
+  }, "耳机输出查询")
+  const preview = async (family: "systemSmall" | "systemMedium") => {
+    try { await Widget.preview({ family }) } catch (error) { if (active.current) setMsg(report("小组件预览", error)) }
+  }
+  const bleHint = !bleAllowed ? BLE_UNAVAILABLE : !settings.enableBle ? "已关闭配件读取，手机电量不受影响。" : settings.maxItems <= 1 ? "最多显示数量为 1 时，只显示手机电量。" : "PRO 已授权。仅在点击后读取标准电池服务配件，不会自动扫描。"
+  return <NavigationStack><List navigationTitle={APP_TITLE}
+    toolbar={{ cancellationAction: <Button title="完成" action={dismiss} /> }}>
+    <Section header={<Text>小组件预览</Text>} footer={<Text>空圆环表示空位；-- 表示无法读取，均不代表虚构的电量。</Text>}>
+      <VStack padding={8}>
+        {stage >= 4 ? BatteryGrid({ items, settings, family: "systemSmall", widget: false, size: { width: 158, height: 158 } }) : <Text>{phone.name} {formatPercent(phone.level)} · {chargeText(phone.charge)}</Text>}
+      </VStack>
+    </Section>
+    <Section header={<Text>当前状态</Text>}>
+      <HStack><Text>{phone.name}</Text><Spacer /><Text foregroundStyle="secondaryLabel">{formatPercent(phone.level)} · {chargeText(phone.charge)}</Text></HStack>
+      <HStack><Text>配件缓存更新</Text><Spacer /><Text foregroundStyle="secondaryLabel">{timeText(snapshot?.builtAt)}</Text></HStack>
+    </Section>
+    {stage >= 6 ? <Section header={<Text>操作</Text>} footer={<Text>{msg || bleHint}</Text>}>
+      <Button title="刷新手机电量" action={() => { refreshPhone(); reload() }} />
+      <Button title={busy ? "正在读取，请稍候…" : "读取已连接的蓝牙配件"} action={readAccessories}
+        disabled={busy || !bleAllowed || !settings.enableBle || settings.maxItems <= 1} />
+      <Button title="检查耳机音频输出" action={inspectAudio} disabled={busy} />
+      <Button title="预览小尺寸小组件" action={() => preview("systemSmall")} />
+      <Button title="预览中尺寸小组件" action={() => preview("systemMedium")} />
+    </Section> : null}
+    {stage >= 6 ? <Section header={<Text>显示与设置</Text>} footer={<Text>设置会自动保存并请求刷新小组件；桌面实际刷新时间由 iOS 决定。</Text>}>
+      <Toggle title="读取标准蓝牙配件电量" value={settings.enableBle} onChanged={value => patch({ enableBle: value })} disabled={!bleAllowed || busy} />
+      <Toggle title="显示设备名称" value={settings.showDeviceNames} onChanged={value => patch({ showDeviceNames: value })} disabled={busy} />
+      <Toggle title="显示 AirPods 说明占位" value={settings.showAirpodsPlaceholder} onChanged={value => patch({ showAirpodsPlaceholder: value })} disabled={busy} />
+      <Toggle title="隐藏离线和过期配件" value={settings.hideOffline} onChanged={value => patch({ hideOffline: value })} disabled={busy} />
+      <Stepper title={`最多显示：${settings.maxItems} 台设备`} disabled={busy}
+        onIncrement={() => patch({ maxItems: Math.min(4, settings.maxItems + 1) })}
+        onDecrement={() => patch({ maxItems: Math.max(1, settings.maxItems - 1) })} />
+      <Stepper title={`配件电量有效期：${settings.staleMinutes} 分钟`} disabled={busy}
+        onIncrement={() => patch({ staleMinutes: Math.min(720, settings.staleMinutes + 15) })}
+        onDecrement={() => patch({ staleMinutes: Math.max(15, settings.staleMinutes - 15) })} />
+      <Button title="清除配件缓存" disabled={busy} action={() => { if (clearSnapshot()) { setSnapshot(null); setAudioMsg(""); setMsg("配件缓存已清除。"); reload() } updateErrors() }} />
+      <Button title="恢复默认设置" disabled={busy} action={() => patch({ ...DEFAULT_SETTINGS })} />
+    </Section> : null}
+    <Section header={<Text>AirPods 与读取范围</Text>}>
+      <Text font="footnote">手机电量与充电状态可直接读取；桌面小组件按 iOS 的刷新节奏更新，可能与状态栏暂时相差少量电量。</Text>
+      <Text font="footnote">标准蓝牙读取仅查询已连接、支持电池服务的配件。开启此开关不会获得系统电池组件的全部设备数据。</Text>
+      <Text font="footnote">当前 Scripting 接口未提供 AirPods 左耳、右耳和充电盒的真实电量。系统电池组件能显示，也不代表脚本可以读取。</Text>
+      <Text font="footnote">“检查耳机音频输出”可查询当前使用的耳机名称，但不能读取其电量。AirPods 说明占位默认关闭，开启后只显示 --，不表示检测到了耳机；隐藏离线配件时不显示说明占位。</Text>
+      {audioMsg ? <Text font="footnote">{audioMsg}</Text> : null}
+    </Section>
+    {errors ? <Section header={<Text>运行提示</Text>} footer={<Text>详细技术错误已写入 Scripting 控制台，桌面不显示错误堆栈。</Text>}>
+      <Text font="footnote">{errors}</Text>
+    </Section> : null}
+  </List></NavigationStack>
 }
-

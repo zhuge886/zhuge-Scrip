@@ -1,6 +1,12 @@
 {
   "name": "battery-monitor-verification",
   "private": true,
-  "scripts": { "typecheck": "tsc -p tsconfig.json", "test": "node smoke.cjs" },
-  "devDependencies": { "typescript": "5.9.3" }
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node smoke.cjs",
+    "pretypecheck": "sh fetch-types.sh"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
 }

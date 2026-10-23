@@ -1,41 +1,53 @@
-# 白屏修复与验证记录（1.0.1）
+# 1.1.0 修复与验证记录
 
-## 定位结论与证据边界
+## 已从截图确认的问题
 
-用户的 iPhone 已开通 Scripting PRO，不能据此把本次白屏归因于未订阅。
-当前执行环境没有连接 iPhone/Scripting，**尚未复现原生白屏，也未确认唯一根因**。
-源码中可确定的故障传播路径是：
+1. **Storage 导入错误**。截图明确记录 `scripting_1.Storage.get` 为 undefined。
+   官方文档项目的 `store.ts` 使用全局 `Storage`；完整声明也将其放在 `global.d.ts`，
+   而非 `scripting.d.ts` 的导出表。原入口在初始化时调用该错误引用会抛错，造成渲染中断。
+2. **另外两个同类错误**：`BluetoothCentralManager`、`FileManager` 同样是宿主全局 API。
+   原手写类型合同和测试都错误模拟为模块导出，漏检了这三处问题；本轮移除该合同并修正模拟。
+3. **不是惰性初始化不受支持**：完整声明明确包含 `useState<T>(value: T | StateInitializer<T>)`。
+   保留具体初始值与 effect 读取作为降级设计，不再将其列为已确认根因。
+4. **错误堆栈占用小组件**：上一版把诊断文字附加到桌面，导致截图中的多行错误溢出。
+   本轮桌面只显示电量；技术错误写入控制台，主界面显示中文摘要。
+5. **布局、语言与状态问题**：圆环过小且空白过多；充电状态和设置为英文；设置没有触发桌面刷新；
+   占位开关依赖扫描；未知电量的音频缓存过期后仍可能显示在线。
 
-- 原 `index.tsx` 在 `useState(() => ...)` 内进行 Storage/Device 同步读取，没有捕获；
-  任一初始化读取抛错都会中断 Dashboard 渲染。现在使用具体初始值，在 effect 中分别读取。
-  此改动也消除了对宿主支持 React 惰性初始化语义的依赖；不宣称已证明当前 App 不支持该语义。
-- 原设置直接展开任意缓存，快照只校验数组；`null` 设备等损坏数据可令组合/渲染抛错。
-- `index.tsx`/`widget.tsx` → `snapshot.ts` → `bluetooth.ts` 静态依赖 PRO API。
-  这让基础界面和小组件也承受可选蓝牙模块的加载故障；现改为检查授权、用户操作后才加载蓝牙。
-- 原入口只处理 `Navigation.present()` 成功，没有失败日志/错误界面。
-  仅在 JSX 外包 try/catch 也捕获不到之后执行的子组件，所以纯 UI 子树在受保护位置构建。
+## API 和能力核对
 
-仍沿用原 Dashboard、DeviceCell、圆环和 grid。Dashboard 移入 `dashboard.tsx`，
-入口只负责最小展示、加载与降级。`widget.tsx` 单独加载数据/UI；可选模块导入、组合和 JS
-渲染失败时展示本机电量文字及错误。无法读取的电量诚实显示 `--`，不造数据。
-原生桥接错误是否会拒绝 `Navigation.present()`，仍须用实际 App 验证；JS 捕获不能保证拦截原生崩溃。
+- [官方 Storage 文档](https://scriptingapp.github.io/guide/Utilities/Storage)。
+  同时对照官方文档包的 `store.ts`（原检查快照 `ScriptingApp/ScriptingApp.github.io@4ff6ea88fbbf853a25039b06e70aee090d1c62d3`）。
+- [官方 BluetoothCentralManager 文档](https://scriptingapp.github.io/guide/Device%20Capabilities/Bluetooth/BluetoothCentralManager)。
+  本项目查询已连接、支持标准电池服务的设备，不枚举系统原生电池组件的全部设备。
+- [官方 SharedAudioSession](https://scriptingapp.github.io/guide/Changelog/3.1.0/SharedAudioSession)。
+  `currentRoute` 提供当前输入/输出端口的名称和类型，不提供电量。
+- [官方 HeadphoneMotionManager](https://scriptingapp.github.io/guide/Utilities/HeadphoneMotionManager)。
+  接口提供运动数据，没有 AirPods 电量字段。本项目不会为此启动运动监听。
+- [官方小组件快速入门](https://scriptingapp.github.io/guide/Widget/Widget%20Quick%20Start)、
+  [Widget API](https://scriptingapp.github.io/guide/Widget/Widget%20API)、
+  [widgetBackground](https://scriptingapp.github.io/guide/View%20Modifiers/widgetBackground)。
 
-## 官方依据
+**AirPods 结论范围**：当前核对的 Scripting 接口没有直接读取左右耳和充电盒电量的 API。
+系统能显示不等于第三方脚本能读取。音频输出查询仅能显示当前耳机名称和未知电量 `--`，
+查询为空也不能据此断言耳机没连接。未把附近广播或说明占位误当成用户耳机的真实电量。
 
-- [最简展示](https://scriptingapp.github.io/guide/Views/Present%20views/Present%20a%20simple%20view/)：`Navigation.present`、`NavigationStack`、`VStack`、`Text`。
-- [Hooks 用法](https://scriptingapp.github.io/guide/Quick%20Start)：具体初始值、effect、清理。
-- [Script API](https://scriptingapp.github.io/guide/Script/Script)：`Script.hasFullAccess(): boolean`。
-- [蓝牙 Central（PRO）](https://scriptingapp.github.io/guide/Device%20Capabilities/Bluetooth/BluetoothCentralManager)。
-- [Storage](https://scriptingapp.github.io/guide/Utilities/Storage)：同步 get，set 返回成功与否。
-- [Shapes](https://scriptingapp.github.io/guide/Views/Shapes/) 和 [Color](https://scriptingapp.github.io/guide/Types/Color)：核对 trim/stroke/颜色；使用 ShapeStyle/DynamicShapeStyle 类型。
-- [小组件](https://scriptingapp.github.io/guide/Widget/Quick%20Start)：独立 `widget.tsx`，不使用 hooks，不扫描，`Widget.present` 前准备数据。
+## 类型检查来源和限制
 
-同时对照官方仓库 `ScriptingApp/ScriptingApp.github.io` 中的
-`scripting/App Store/Scripting Documentation.zip`（读取时 main 为 `4ff6ea88fbbf853a25039b06e70aee090d1c62d3`）。
+本轮移除 `verification/scripting.d.ts` 手写合同，改用公开保存的 Scripting 完整运行时声明：
 
-## 已在开发环境执行
+- 来源：[Yii-An/Scripting-Scripts](https://github.com/Yii-An/Scripting-Scripts/tree/be3ea45b820b16c11fa7ce0b332b9b0e32ec5a3b/dts)。
+- 固定提交：`be3ea45b820b16c11fa7ce0b332b9b0e32ec5a3b`。
+- `global.d.ts` SHA-256：`f8b82ae67ef6e6f53abad2b66559403c9296a97eedd728d7fb473ac11a32a4b1`。
+- `scripting.d.ts` SHA-256：`3fdcc4ef0ca032f569438645a79184ef7ee241e1812d517acfce8a4fd85e8905`。
 
-从仓库根目录运行：
+`fetch-types.sh` 固定来源、校验哈希，并将声明下载到忽略的 `.runtime-types` 目录，未把大份第三方声明重新发布到本仓库。
+它是**公开镜像，不是本次 iPhone 同步的声明**；关键全局用法还与官方示例和用户真机报错相互印证。
+TypeScript 5.9.3 strict/noEmit 检查项目全部源码、两个入口、App Intent 与安装器；
+`skipLibCheck` 仅跳过镜像声明内部检查，不跳过项目源码。
+原代码在该检查下确实报出 Storage、BluetoothCentralManager、FileManager 的 TS2305 导出错误；修改后通过。
+
+复现命令：
 
 ```sh
 npm --prefix verification ci
@@ -43,45 +55,37 @@ npm --prefix verification run typecheck
 npm --prefix verification test
 ```
 
-- TypeScript 5.9.3 strict/noEmit：两个入口、全部依赖、安装器通过。
-- 类型环境是 `verification/scripting.d.ts` 的**官方文档衍生、有限 API 合同**，明确检查所用属性、
-  回调与数据类型，未用任意属性索引/全局 any 放行组件。它不是 App 同步的官方完整 `.d.ts`；
-  必须再用 iPhone 当前版本内置检查或 CLI 同步声明验证版本兼容性。
-- Node 故障注入：32 项通过，先最简界面、再逐阶段恢复 Storage、Device、组合、DeviceCell、监听、全部控件。
-- 覆盖 Storage 读取抛错/写入返回 false、畸形快照/设置、独立电池 getter 失败、NaN/-1、监听失败及清理。
-- 覆盖 PRO 未授权/检查抛错：禁用扫描，保留手机电量。用户已有 PRO 的路径也检查。
-- 覆盖蓝牙模块导入失败、读取拒绝、无设备、标准服务返回 88%：只有用户点击才加载/读取；本机电量持续显示。
-- 覆盖 Dashboard 导入失败、数据组合/DeviceCell/grid 抛错、手机监听更新、widget 独立启动。
-- 校验安装器 FILES 包含所有运行时模块；版本升级至 1.0.1。
+## 开发环境已验证
 
-这些是 JavaScript 控制流、虚拟节点与静态检查，**不是 SwiftUI 渲染或真实蓝牙测试**。
+56 项 JS/虚拟节点故障注入检查通过，包括：
 
-## iPhone 分阶段复验（待执行）
+- 最简界面与 stage=1..6 恢复流程，初始界面不启动蓝牙或耳机音频查询。
+- **全局 API 回归**：模块没有导出 Storage/BluetoothCentralManager 时，使用全局接口仍可读写。
+- Storage 读取抛错、缺失、写入 false、损坏设置/缓存，手机电量始终可独立显示。
+- 设置保存后请求刷新；新一轮 widget 运行能读到保存的设置。
+- 主动蓝牙读取、PRO 未授权、超时、无设备、读取失败、完整 128 位 UUID、重复设备、无效电量字节。
+- 快速重复点击只执行一个读取任务；定时器完成后清理。
+- 耳机查询仅在点击后执行；当前 AirPods 输出名称可缓存，电量始终保持未知，不影响手机电量。
+- 占位即时开关、过期状态、重复 ID、隐藏离线、监听刷新与清理。
+- 小/中/大尺寸与锁屏圆环的空间预算；只有真实数据填充圆环，空槽不显示伪造百分比。
+- 小组件独立运行、模块/绘制失败降级、不显示技术堆栈；所有控件和状态使用中文。
+- 安装器包含全部 18 个运行文件；先完整下载后写入，防止下载中断留下混合版本。
+- `git diff --check` 通过。
 
-可通过 URL `scripting://run/Battery%20Monitor?stage=0` 或脚本运行参数传入 `stage`。
-若本机项目名称不同，请替换 URL 中的名称。没有参数时默认为完整的阶段 6。
+这些检查不模拟 SwiftUI、蓝牙硬件或 WidgetKit 调度，不能据此宣称新版本已通过全部真机验收。
 
-| 阶段 | 新增能力 | 应观察到 |
-| --- | --- | --- |
-| 0 | 官方最简 `Navigation.present + NavigationStack + VStack + Text`，无 hooks/本地运行时模块 | `Hello Scripting!` |
-| 1 | Storage + 具体初始状态 | 列表和设置/快照读取；电量暂为 `--` |
-| 2 | Device | iPhone 当前百分比与充电状态 |
-| 3 | 数据组合 | 本机 + 有效缓存，不可被坏缓存遮住本机 |
-| 4 | DeviceCell/圆环 | 原有圆环预览 |
-| 5 | 电池监听 | 插拔电源后状态变化，退出后移除监听 |
-| 6 | 全部设置/按钮、PRO 检查 | 完整界面；启动无蓝牙访问，点击扫描才执行 |
+## 需要在 iPhone 复验
 
-最先失败的阶段和控制台 `[Battery Monitor]` 日志，才是确认该手机实际根因的依据。
-还需验证：当前 App 官方类型检查、远程更新完整性、浅/深色原生渲染、关闭蓝牙/拒绝权限、
-真实 0x180F/0x2A19 设备、桌面小/中尺寸实际显示与 WidgetKit 刷新。
+1. 用同一短分支地址重新远程导入，确认“电量监控” **1.1.0**；旧桌面小组件若仍指向 Battery Monitor，编辑后选择新版。
+2. 应不再出现 `scripting_1.Storage.get`；修改“显示设备名称”等设置，关闭再运行后应保留。
+3. 小尺寸显示四槽圆环，中尺寸四格横排；浅色/深色/着色/透明模式、系统大字体和名称开关无裁切。
+4. 桌面不出现堆栈，点击小组件能进入本脚本；刷新由 iOS 安排，不能要求与状态栏始终同步。
+5. 插拔电源确认“未充电 / 充电中 / 已充满”，退出界面后监听清理。
+6. 戴上 AirPods 并播放音频，在控制中心选择耳机后点“检查耳机音频输出”，核对返回名称。
+   主界面应说明电量不可读取，不能把 `--` 当成真实电量；若路由为空，应说明不代表未连接。
+7. 支持标准电池服务的配件，分别检查蓝牙关闭、权限拒绝、无设备、成功读取与超时。
+8. 用当前 iPhone 经 Scripting CLI 同步的官方声明，再核对该 App 版本的所有 API 签名。
 
-## 在 iPhone 桌面显示
-
-1. 用更新后的仓库根目录 `install.tsx` 执行 **Install / Update**，应成功下载全部 15 个文件。
-   合并前测试修复分支时，将安装器 `BRANCH` 改为 `fix/battery-monitor-startup-20261023`；合并后使用默认 `main`。
-2. 打开 Battery Monitor，确认本机电量和状态；可点 **Preview widget (medium)** 预览。
-3. 长按 iPhone 桌面空白处 → 添加小组件 → **Scripting** → 选择尺寸并添加。
-4. 长按该小组件 → 编辑小组件 → 选择 **Battery Monitor**。
-
-iOS 需要用户手动添加到桌面，脚本不能自动摆放小组件。桌面刷新由 WidgetKit 调度，
-本脚本请求约 15 分钟后刷新；这不是实时更新保证。无需扫描即可显示手机电量。
+仍保留最简与分阶段诊断入口：`scripting://run/电量监控?stage=0`（URL 使用时编码中文名称），
+阶段 0 为中文化的官方最简 `Navigation.present + NavigationStack + VStack + Text` 结构；
+1=Storage，2=Device，3=组合，4=圆环，5=监听，6=完整设置与操作。

@@ -18,22 +18,21 @@ export function airpodsPlaceholder(): BatteryItem {
     charge: "unknown",
     connected: false,
     updatedAt: Date.now(),
-    note: "iOS doesn't expose AirPods battery to third-party scripts",
+    note: "说明占位；不表示已连接，无法读取真实电量",
   }
 }
 
 /** Collect everything except the phone (phone is read live in the widget). */
 export async function buildSnapshotItems(settings: Settings): Promise<BatteryItem[]> {
   const items: BatteryItem[] = []
-  if (settings.showAirpodsPlaceholder) items.push(airpodsPlaceholder())
-  if (!settings.enableBle) return items
+  if (!settings.enableBle || settings.maxItems <= 1) return items
   if (!canReadBle()) throw new Error(BLE_UNAVAILABLE)
   try {
     const { readBleBatteries } = await import("./bluetooth")
     const ble = await readBleBatteries(settings)
     items.push(...ble)
   } catch (error) {
-    report("BLE snapshot", error)
+    report("配件读取", error)
     throw error
   }
   return items
@@ -59,16 +58,18 @@ export function composeItems(
   snapshot: Snapshot | null,
   settings: Settings
 ): BatteryItem[] {
-  const cached = snapshot?.items ?? []
+  const cached = (snapshot?.items ?? []).filter(it => it.kind !== "phone" && it.kind !== "airpods")
   const normalized = cached.map(it => {
     // A stale cached reading is shown as unknown rather than as a fresh value.
-    if (it.level != null && isStale(it, settings)) {
-      return { ...it, level: null, connected: false, note: "stale" }
+    if (isStale(it, settings) || it.updatedAt > Date.now() + 60_000) {
+      return { ...it, level: null, charge: "unknown" as const, connected: false, note: "配件缓存已过期" }
     }
     return it
   })
 
-  let all = [phone, ...normalized]
+  const unique = [...new Map(normalized.map(it => [it.id, it])).values()]
+  if (settings.showAirpodsPlaceholder && !unique.some(it => it.symbol === "airpods")) unique.push(airpodsPlaceholder())
+  let all = [phone, ...unique]
 
   if (settings.hideOffline) {
     all = all.filter(it => it.kind === "phone" || it.connected)
@@ -82,5 +83,6 @@ export function composeItems(
     return lb - la
   })
 
-  return all.slice(0, Math.max(1, settings.maxItems))
+  const limit = Number.isFinite(settings.maxItems) ? Math.max(1, Math.min(4, settings.maxItems)) : 4
+  return all.slice(0, limit)
 }

@@ -3,7 +3,7 @@ import { attempt } from "./diagnostics"
 
 // Never infer entitlement from Bluetooth availability or trigger a permission prompt.
 export function canReadBle(): boolean {
-  return attempt("Scripting PRO check", () =>
+  return attempt("PRO 授权检测", () =>
     typeof Script.hasFullAccess === "function" && Script.hasFullAccess(), false)
 }
-export const BLE_UNAVAILABLE = "BLE requires Scripting PRO. Scanning is disabled; iPhone battery remains available."
+export { BLE_UNAVAILABLE } from "./copy"

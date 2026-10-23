@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 import { AppIntentManager, AppIntentProtocol, Widget } from "scripting"
 import { report } from "./diagnostics"
-import { loadSettings, saveSnapshot } from "./store"
+import { loadSettings, loadSnapshot, saveSnapshot } from "./store"
 import { buildSnapshotItems } from "./snapshot"
 
 export const RefreshBatteryIntent = AppIntentManager.register<undefined>({
@@ -19,8 +19,9 @@ export const RefreshBatteryIntent = AppIntentManager.register<undefined>({
     try {
       const settings = loadSettings()
       const items = await buildSnapshotItems(settings)
-      saveSnapshot(items)
+      const audio = (loadSnapshot()?.items ?? []).filter(it => it.id.startsWith("audio-output:"))
+      saveSnapshot([...items, ...audio])
       Widget.reloadAll()
-    } catch (error) { report("Refresh intent", error) }
+    } catch (error) { report("配件刷新", error); throw error }
   },
 })
