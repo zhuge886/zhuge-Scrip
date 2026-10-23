@@ -21,8 +21,8 @@ import {
 } from "scripting"
 
 // ---- EDIT THESE THREE LINES ----
-const OWNER = "YOUR_GITHUB_USERNAME"
-const REPO = "battery-widget"
+const OWNER = "zhuge886"
+const REPO = "zhuge-Scrip"
 const BRANCH = "main"
 // --------------------------------
 
