@@ -42,6 +42,8 @@ export interface Snapshot {
 export interface Settings {
   /** Max number of cells shown in the widget (phone counts as one). */
   maxItems: number
+  /** Show device names below the compact rings. */
+  showDeviceNames: boolean
   /** Hide an item instead of showing it as offline once disconnected. */
   hideOffline: boolean
   /** Minutes before a cached BLE reading is considered stale. */
@@ -69,12 +71,13 @@ export const STORAGE_KEYS = {
 
 export const DEFAULT_SETTINGS: Settings = {
   maxItems: 4,
+  showDeviceNames: false,
   hideOffline: false,
   staleMinutes: 60,
   enableBle: true,
   lowPercent: 20,
   midPercent: 40,
-  showAirpodsPlaceholder: true,
+  showAirpodsPlaceholder: false,
 }
 
 /** Standard GATT UUIDs for the Battery Service. */

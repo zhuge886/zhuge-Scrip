@@ -8,16 +8,20 @@
 //   * a Shortcuts automation ("Run Script" / intent) for periodic updates
 // ---------------------------------------------------------------------------
 import { AppIntentManager, AppIntentProtocol, Widget } from "scripting"
-import { loadSettings, saveSnapshot } from "./store"
+import { report } from "./diagnostics"
+import { loadSettings, loadSnapshot, saveSnapshot } from "./store"
 import { buildSnapshotItems } from "./snapshot"
 
 export const RefreshBatteryIntent = AppIntentManager.register<undefined>({
   name: "RefreshBatteryIntent",
   protocol: AppIntentProtocol.AppIntent,
   perform: async () => {
-    const settings = loadSettings()
-    const items = await buildSnapshotItems(settings)
-    saveSnapshot(items)
-    Widget.reloadAll()
+    try {
+      const settings = loadSettings()
+      const items = await buildSnapshotItems(settings)
+      const audio = (loadSnapshot()?.items ?? []).filter(it => it.id.startsWith("audio-output:"))
+      saveSnapshot([...items, ...audio])
+      Widget.reloadAll()
+    } catch (error) { report("配件刷新", error); throw error }
   },
 })
