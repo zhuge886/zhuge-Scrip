@@ -1,0 +1,8 @@
+{
+  "name": "sgcc-widget-verification",
+  "private": true,
+  "scripts": { "check": "tsc -p tsconfig.json", "test": "node smoke.cjs" },
+  "devDependencies": {
+    "typescript": "5.8.3"
+  }
+}

@@ -2,7 +2,7 @@
 
 自用的 iPhone **Scripting** 脚本集合。每个功能使用独立目录，包含自己的项目清单、入口、依赖与使用说明，可单独远程导入。
 
-当前收录 **电量监控** 和 **三角洲收益**，每个功能可独立导入。
+当前收录 **电量监控**、**三角洲收益** 和 **网上国网·手动户号**，每个功能可独立导入。
 
 ## 功能目录
 
@@ -10,6 +10,7 @@
 | --- | --- | --- | --- | --- |
 | 电量监控 | 1.1.1 | 中文电量界面、简洁桌面圆环与百分比、标准蓝牙配件按需读取 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget) | [查看说明](battery-widget/README.md) |
 | 三角洲收益 | 1.1.0 | 微信授权、昨日收益 / 哈夫币组件、官网角色与数据同步、脱敏诊断 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
+| 网上国网·手动户号 | 1.1.0 | 手动户号、余额独立查询；未绑定直查待验证，需地区资料及登录 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
 
 ## 远程导入链接（点击代码块右上角即可复制）
 
@@ -42,6 +43,14 @@ https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget
 
 [使用说明](delta-force-widget/README.md) · [接口分析](delta-force-widget/API.md) · [验证记录](delta-force-widget/VERIFICATION.md)
 
+### 网上国网·手动户号
+
+```text
+https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget
+```
+
+新增手动户号来源与余额独立查询；可跳过空绑定列表，但**未绑定户号仍需省份、供电单位及用电类型资料，且尚未验证真实查询**。当前没有接入 App 的“为其他户号交费”资料查询接口，不能宣称只填户号即可查询。详见 [使用说明](sgcc-widget/README.md) 和 [验证状态](sgcc-widget/VERIFICATION.md)。
+
 ## 仓库结构
 
 ```text
@@ -60,9 +69,15 @@ zhuge-Scrip/
 │   └── README.md                     # 使用与授权说明
 ├── installers/
 │   └── battery-widget.tsx            # 电量监控可选安装器
+├── sgcc-widget/                      # 网上国网·手动户号：独立 Scripting 项目
+│   ├── script.json                   # 版本 1.1.0，未绑定直查待验证
+│   ├── index.tsx                     # 登录、手动户号资料与查询结果
+│   ├── widget.tsx                    # 余额与用电信息组件
+│   └── README.md                     # 使用步骤与接口限制
 └── verification/
     ├── battery-widget/               # 电量监控类型检查与回归检查
-    └── delta-force-widget/           # 三角洲收益类型检查与回归检查
+    ├── delta-force-widget/           # 三角洲收益类型检查与回归检查
+    └── sgcc-widget/                  # 国网类型检查与离线模拟检查
 ```
 
 ## 后续添加新脚本
@@ -73,4 +88,5 @@ zhuge-Scrip/
 4. 需要安装器或开发检查时，分别放入 `installers/<功能目录名>.tsx` 和 `verification/<功能目录名>/`。
 
 正式导入链接统一使用 `main` 分支下的功能目录，避免把整个多功能仓库作为单个脚本导入。
+
 
