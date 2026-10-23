@@ -3,22 +3,26 @@
 简洁的桌面电量小组件：系统风格圆环、设备图标和百分比。设置、充电状态与说明均使用中文。
 只展示真实可读取的数据；空槽只画轨道，无法读取的设备显示 `--`。
 
-## 导入 1.1.0 测试版
+## 远程导入
 
 在 **Scripting → 导入远程脚本** 中粘贴：
 
 ```text
-https://github.com/zhuge886/zhuge-Scrip/tree/battery-monitor-fix/battery-widget
+https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget
 ```
 
-确认名称为 **电量监控**、版本为 **1.1.0**，导入完整目录并运行。
+确认名称为 **电量监控**、版本为 **1.1.1**，导入完整目录并运行。
 如果手机上保留了旧的 Battery Monitor 项目，请在桌面小组件的编辑菜单中选择新版本的“电量监控”。
 
 添加桌面小组件：**长按桌面 → 添加小组件 → Scripting → 编辑小组件 → 选择电量监控**。
 iOS 需要用户手动添加，脚本不能自动摆放小组件。小组件显示名称下方的“Scripting”由系统管理，
 脚本不能把这个宿主名称改成“电池”。
 
-## 1.1.0 修复了什么
+## 版本记录
+
+**1.1.1**：按功能归档安装器与开发检查，正式导入链接使用 `main`；补充公开电量接口可能取整的说明。
+
+### 1.1.0 修复内容
 
 - **明确根因**：原代码误将全局 API `Storage` 当作 `"scripting"` 的模块导出，正是截图中
   `scripting_1.Storage.get` 为 undefined 的原因。同步修正蓝牙 `BluetoothCentralManager` 和
@@ -56,7 +60,8 @@ iOS 需要用户手动添加，脚本不能自动摆放小组件。小组件显�
    均不影响手机电量。它查询系统已连接设备，不是持续发现附近设备的扫描器。
 3. 想查看耳机名称，可点击“检查耳机音频输出”。
 4. 调整设置会保存并请求刷新桌面。桌面电量在每次小组件运行时读取，
-   脚本请求约 15 分钟后刷新；实际时间由 WidgetKit 决定，不保证实时，可能暂时与状态栏相差少量电量。
+   脚本请求约 15 分钟后刷新；实际时间由 WidgetKit 决定，不保证实时。
+   部分 iOS 版本的公开电量接口按约 5% 档位返回，可能与状态栏不同，反复刷新不一定能消除差异。
 5. 可在应用里预览小尺寸和中尺寸，最终布局仍以桌面为准。
 
 ## 模块
@@ -74,16 +79,16 @@ iOS 需要用户手动添加，脚本不能自动摆放小组件。小组件显�
 | `app_intents.tsx` | 显式触发的配件刷新 Intent |
 | `script.json` | 中文项目清单与版本 |
 
-仓库根目录的 `install.tsx` 仍提供可选安装器，完整下载 **18 个运行文件** 后才写入。
-默认来源为 `main`；合并前测试时需将其中 `BRANCH` 改为 `battery-monitor-fix`。
+[`installers/battery-widget.tsx`](../installers/battery-widget.tsx) 仍提供可选安装器，完整下载 **18 个运行文件** 后才写入。
+安装器默认读取 `main` 中的同一功能目录。
 推荐直接使用上方远程导入地址。
 
 ## 开发检查与真机复验
 
 ```sh
-npm --prefix verification ci
-npm --prefix verification run typecheck
-npm --prefix verification test
+npm --prefix verification/battery-widget ci
+npm --prefix verification/battery-widget run typecheck
+npm --prefix verification/battery-widget test
 ```
 
 类型检查使用固定提交的公开 Scripting 完整声明镜像，分清宿主全局与模块导出；

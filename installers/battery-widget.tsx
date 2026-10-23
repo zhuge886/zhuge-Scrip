@@ -1,34 +1,19 @@
-// ===========================================================================
-// One-tap installer for the "Battery Monitor" Scripting project.
-//
-// HOW TO USE (on iPhone):
-//   1. In the Scripting app, create a NEW script project (any name, e.g.
-//      "Install Battery Monitor").
-//   2. Replace its index.tsx with THIS file's contents.
-//   3. Edit the three constants below (OWNER / REPO / BRANCH) to match your
-//      GitHub repository.
-//   4. Run it, tap "Install / Update", then fully quit & reopen Scripting.
-//      A new project named "Battery Monitor" will appear, ready to add as a
-//      widget.
-//
-// It fetches the raw files from your PUBLIC GitHub repo (no token / no PRO
-// needed) and writes them into the app's scripts directory.
-// For a PRIVATE repo, use the GitHub API (Settings → GitHub token) instead.
-// ===========================================================================
+// 电量监控可选安装器（默认读取 main 的 battery-widget 功能目录）。
+// 在 Scripting 中新建“安装电量监控”项目，将本文件内容复制到 index.tsx 后运行。
+// 推荐优先使用仓库主页提供的功能目录远程导入链接。
 import {
   fetch, Navigation, NavigationStack, List, Section,
   Button, Text, VStack, Script, useState,
 } from "scripting"
 
-// ---- EDIT THESE THREE LINES ----
+// 仓库来源
 const OWNER = "zhuge886"
 const REPO = "zhuge-Scrip"
 const BRANCH = "main"
-// --------------------------------
 
-// Folder inside the repo that holds the project files ("" if at repo root).
+// 当前功能的独立目录。
 const SUBDIR = "battery-widget"
-// Target project name created on-device.
+// 安装后的中文项目名称。
 const PROJECT = "电量监控"
 
 const FILES = [

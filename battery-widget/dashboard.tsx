@@ -125,7 +125,7 @@ export function Dashboard({ stage = 6 }: { stage?: number }) {
       <Button title="恢复默认设置" disabled={busy} action={() => patch({ ...DEFAULT_SETTINGS })} />
     </Section> : null}
     <Section header={<Text>AirPods 与读取范围</Text>}>
-      <Text font="footnote">手机电量与充电状态可直接读取；桌面小组件按 iOS 的刷新节奏更新，可能与状态栏暂时相差少量电量。</Text>
+      <Text font="footnote">手机电量来自系统公开接口；部分 iOS 版本会按约 5% 档位取整，可能与状态栏不同。桌面显示还受 iOS 刷新节奏影响。</Text>
       <Text font="footnote">标准蓝牙读取仅查询已连接、支持电池服务的配件。开启此开关不会获得系统电池组件的全部设备数据。</Text>
       <Text font="footnote">当前 Scripting 接口未提供 AirPods 左耳、右耳和充电盒的真实电量。系统电池组件能显示，也不代表脚本可以读取。</Text>
       <Text font="footnote">“检查耳机音频输出”可查询当前使用的耳机名称，但不能读取其电量。AirPods 说明占位默认关闭，开启后只显示 --，不表示检测到了耳机；隐藏离线配件时不显示说明占位。</Text>

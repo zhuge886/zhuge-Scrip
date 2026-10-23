@@ -2,7 +2,7 @@
   "icon": "battery.100.bolt",
   "color": "green",
   "name": "电量监控",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "简洁的手机与配件电量小组件：显示真实电量百分比，支持按需读取标准蓝牙配件及查看耳机音频输出。",
   "localizedNames": {
     "zh": "电量监控"

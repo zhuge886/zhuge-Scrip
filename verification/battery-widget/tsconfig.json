@@ -4,5 +4,5 @@
     "jsx": "preserve", "skipLibCheck": true, "noEmit": true,
     "paths": { "scripting": ["./.runtime-types/scripting.d.ts"] }
   },
-  "include": ["../battery-widget/**/*.ts", "../battery-widget/**/*.tsx", "../install.tsx", ".runtime-types/global.d.ts"]
+  "include": ["../../battery-widget/**/*.ts", "../../battery-widget/**/*.tsx", "../../installers/battery-widget.tsx", ".runtime-types/global.d.ts"]
 }

@@ -1,4 +1,4 @@
-# 1.1.0 修复与验证记录
+# 电量监控 1.1.1 修复与验证记录
 
 ## 已从截图确认的问题
 
@@ -34,7 +34,7 @@
 
 ## 类型检查来源和限制
 
-本轮移除 `verification/scripting.d.ts` 手写合同，改用公开保存的 Scripting 完整运行时声明：
+本轮移除 `verification/scripting.d.ts`（1.1.0 前的旧位置） 手写合同，改用公开保存的 Scripting 完整运行时声明：
 
 - 来源：[Yii-An/Scripting-Scripts](https://github.com/Yii-An/Scripting-Scripts/tree/be3ea45b820b16c11fa7ce0b332b9b0e32ec5a3b/dts)。
 - 固定提交：`be3ea45b820b16c11fa7ce0b332b9b0e32ec5a3b`。
@@ -50,9 +50,9 @@ TypeScript 5.9.3 strict/noEmit 检查项目全部源码、两个入口、App Int
 复现命令：
 
 ```sh
-npm --prefix verification ci
-npm --prefix verification run typecheck
-npm --prefix verification test
+npm --prefix verification/battery-widget ci
+npm --prefix verification/battery-widget run typecheck
+npm --prefix verification/battery-widget test
 ```
 
 ## 开发环境已验证
@@ -76,7 +76,7 @@ npm --prefix verification test
 
 ## 需要在 iPhone 复验
 
-1. 用同一短分支地址重新远程导入，确认“电量监控” **1.1.0**；旧桌面小组件若仍指向 Battery Monitor，编辑后选择新版。
+1. 从 `main/battery-widget` 远程导入，确认“电量监控” **1.1.1**；旧桌面小组件若仍指向 Battery Monitor，编辑后选择新版。
 2. 应不再出现 `scripting_1.Storage.get`；修改“显示设备名称”等设置，关闭再运行后应保留。
 3. 小尺寸显示四槽圆环，中尺寸四格横排；浅色/深色/着色/透明模式、系统大字体和名称开关无裁切。
 4. 桌面不出现堆栈，点击小组件能进入本脚本；刷新由 iOS 安排，不能要求与状态栏始终同步。
@@ -89,3 +89,15 @@ npm --prefix verification test
 仍保留最简与分阶段诊断入口：`scripting://run/电量监控?stage=0`（URL 使用时编码中文名称），
 阶段 0 为中文化的官方最简 `Navigation.present + NavigationStack + VStack + Text` 结构；
 1=Storage，2=Device，3=组合，4=圆环，5=监听，6=完整设置与操作。
+
+## 1.1.1 归档整理与电量精度补充
+
+- 运行项目仍独立放在 `battery-widget/`，正式导入使用 `main`。
+- 可选安装器移动到 `installers/battery-widget.tsx`。
+- 完整类型检查与回归检查移动到 `verification/battery-widget/`。
+- 仓库主页提供功能目录与可复制链接，目前仅收录电量监控。
+- 用户 55% / 状态栏 57% 的截图还可能涉及公开接口的取整精度，不能仅归因于缓存或 WidgetKit 延迟。
+  [Apple 开发者论坛中的电量精度说明](https://developer.apple.com/forums/thread/732903)记录了部分 iOS 按 5% 档位返回的行为，
+  Apple 工程师确认接口报告精度由系统决定。应用只能展示 API 返回值，不应人为补成状态栏读数。
+- 研究资料中存在解析 AirPods 开盒广播的实验方法，但尚未验证当前 iPhone/Scripting 是否能收到所需报文、
+  准确匹配用户耳机。此版本未加入该实验功能，也未宣称具备系统组件的左右耳/盒电量能力。

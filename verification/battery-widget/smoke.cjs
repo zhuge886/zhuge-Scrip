@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
 const ts = require('typescript')
-const root = path.resolve(__dirname, '../battery-widget')
+const root = path.resolve(__dirname, '../../battery-widget')
 
 function runtime(options = {}) {
   const cache = new Map(), states = new Map(), effects = [], cleanups = [], logs = [], frames = []
@@ -307,7 +307,7 @@ async function main() {
     assert.equal(r.load('store').loadSnapshot().items[0].id, audio.id); check()
   }
   // Installer includes the complete local dependency closure of both entry points.
-  const installer = fs.readFileSync(path.resolve(root, '../install.tsx'), 'utf8')
+  const installer = fs.readFileSync(path.resolve(root, '../installers/battery-widget.tsx'), 'utf8')
   for (const [name] of runtimeFiles()) assert(installer.includes(`"${name}"`), `Installer omits ${name}`)
   check()
   console.log(`PASS: ${checks} JS fault-injection / staged-render checks (not native iOS rendering).`)
