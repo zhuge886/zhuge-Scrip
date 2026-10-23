@@ -14,7 +14,7 @@ function AmountView({ title, metric, signed, small }: { title: string; metric: M
   </VStack>
 }
 export function WalletCard({ snapshot, small = false, url }: { snapshot: Snapshot; small?: boolean; url?: string }) {
-  const info = snapshot.needsLogin ? "点按打开 · 微信登录"
+  const info = snapshot.needsLogin ? "点按查看授权与查询状态"
     : snapshot.balance.status === "cached" || snapshot.profit.status === "cached" ? "离线或授权失效 · 显示缓存"
     : snapshot.profit.value === null ? snapshot.profit.message
     : "腾讯日报 · 北京时间"

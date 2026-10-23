@@ -9,7 +9,7 @@
 | 功能 | 版本 | 用途 | 远程导入 | 使用说明 |
 | --- | --- | --- | --- | --- |
 | 电量监控 | 1.1.1 | 中文电量界面、简洁桌面圆环与百分比、标准蓝牙配件按需读取 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget) | [查看说明](battery-widget/README.md) |
-| 三角洲收益 | 1.0.0 | 本人微信授权、昨日收益与总哈夫币桌面组件；首版待真机授权验收 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
+| 三角洲收益 | 1.1.0 | 微信授权、昨日收益 / 哈夫币组件、官网角色与数据同步、脱敏诊断 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
 
 ## 远程导入链接（点击代码块右上角即可复制）
 
@@ -38,7 +38,7 @@ https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget
 https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget
 ```
 
-在 **Scripting → 导入远程脚本** 中粘贴，确认名称 **三角洲收益**、版本 **1.0.0**。运行后使用本人微信授权，再添加桌面小组件。支持扫码和本机微信授权；开发环境已完成类型检查和模拟测试，真实微信登录与桌面显示仍需在本人 iPhone 验收。
+在 **Scripting → 导入远程脚本** 中粘贴，确认名称 **三角洲收益**、版本 **1.1.0**。修复扫码后查询失败导致登录不保存的问题，按官方配置补齐游戏查询路由与身份参数。支持官网同步、角色检查、脱敏诊断和本机导入本人小程序查询凭据。已通过类型检查和 21 项模拟测试，真实查询仍需本人 iPhone 验收。
 
 [使用说明](delta-force-widget/README.md) · [接口分析](delta-force-widget/API.md) · [验证记录](delta-force-widget/VERIFICATION.md)
 

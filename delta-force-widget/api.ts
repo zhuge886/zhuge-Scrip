@@ -1,7 +1,8 @@
 import { fetch } from "scripting"
-import { AMS_URL, balanceForm, Metric, parseBalance, parseProfit, profitForm, QueryError, safeMessage, Session, Snapshot, yesterday } from "./model"
+import { AMS_URL, authForm, assertAms, balanceForm, bindingForm, Metric, parseBalance, parseProfit, profitForm, QueryError, safeMessage, Session, Snapshot, yesterday } from "./model"
 import { loadSession, loadSnapshot, saveSnapshot } from "./store"
 import { emptySnapshot } from "./model"
+import { recordDiagnostic } from "./diagnostics"
 
 export async function ams(session: Session, body: string): Promise<unknown> {
   try {
@@ -9,10 +10,10 @@ export async function ams(session: Session, body: string): Promise<unknown> {
       method: "POST", timeout: 10,
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": `acctype=wx; appid=${session.appid}; openid=${session.openid}; access_token=${session.access_token}`,
-        "Referer": "https://df.qq.com/",
+        "Cookie": `acctype=${session.acctype}; appid=${session.appid}; openid=${session.openid}; access_token=${session.access_token}`,
+        "Referer": "https://df.qq.com/cp/record202410ver/",
       },
-      body,
+      body: `${body}&${authForm(session)}`,
       // Credentials stay on the selected Tencent endpoint.
       handleRedirect: async () => null,
     })
@@ -27,11 +28,21 @@ export async function ams(session: Session, body: string): Promise<unknown> {
 export async function verifySession(session: Session): Promise<void> {
   parseBalance(await ams(session, balanceForm()))
 }
-function failedMetric(previous: Metric, error: unknown, auth: boolean): Metric {
+export async function queryBinding(): Promise<boolean> {
+  const session = loadSession()
+  if (!session) throw new QueryError("auth", "请先保存微信登录")
+  try {
+    const result = assertAms(await ams(session, bindingForm()))
+    recordDiagnostic("角色")
+    return result.bindarea != null && result.bindarea !== "" && result.bindarea !== "0" && result.bindarea !== false &&
+      (typeof result.bindarea !== "object" || Object.keys(result.bindarea as object).length > 0)
+  } catch (error) { recordDiagnostic("角色", error); throw error }
+}
+function failedMetric(previous: Metric, error: unknown): Metric {
   return {
     ...previous,
     status: previous.value === null ? "error" : "cached",
-    message: auth ? "登录失效，显示缓存；请重新登录" : `${safeMessage(error)}${previous.value !== null ? "；显示缓存" : ""}`,
+    message: `${safeMessage(error)}${previous.value !== null ? "；显示缓存" : ""}`,
   }
 }
 export async function refreshSnapshot(force = false, now = Date.now()): Promise<Snapshot> {
@@ -44,19 +55,25 @@ export async function refreshSnapshot(force = false, now = Date.now()): Promise<
     ams(session, balanceForm()).then(parseBalance),
     ams(session, profitForm()).then(raw => parseProfit(raw, yesterday(now))),
   ])
+  return storeQueryResults(session, previous, money, daily, now)
+}
+export function storeQueryResults(session: Session, previous: Snapshot,
+  money: PromiseSettledResult<string>, daily: PromiseSettledResult<ReturnType<typeof parseProfit>>, now = Date.now()): Snapshot {
   const needsLogin = [money, daily].some(r => r.status === "rejected" && r.reason instanceof QueryError && r.reason.code === "auth")
   const next: Snapshot = {
     version: 1, day: yesterday(now), needsLogin,
     balance: money.status === "fulfilled"
       ? { value: money.value, updatedAt: now, status: "ok", message: "当前哈夫币余额" }
-      : failedMetric(previous.balance, money.reason, needsLogin),
+      : failedMetric(previous.balance, money.reason),
     profit: daily.status === "fulfilled"
       ? { value: daily.value.value, updatedAt: now, status: daily.value.value === null ? "missing" : "ok", message: daily.value.message }
-      : failedMetric(previous.profit, daily.reason, needsLogin),
+      : failedMetric(previous.profit, daily.reason),
   }
   // Discard results from an in-flight query if the user changed or removed the account.
   const current = loadSession()
   if (!current || current.openid !== session.openid || current.appid !== session.appid || current.access_token !== session.access_token) return emptySnapshot(now)
+  recordDiagnostic("余额", money.status === "rejected" ? money.reason : undefined)
+  recordDiagnostic("日报", daily.status === "rejected" ? daily.reason : undefined)
   saveSnapshot(session, next)
   return next
 }

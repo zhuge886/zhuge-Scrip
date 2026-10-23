@@ -22,6 +22,9 @@ const model = require(path.join(root, 'model.ts'))
 const store = require(path.join(root, 'store.ts'))
 const api = require(path.join(root, 'api.ts'))
 const auth = require(path.join(root, 'auth.ts'))
+const credentials = require(path.join(root, 'credentials.ts'))
+const diagnostics = require(path.join(root, 'diagnostics.ts'))
+const webSync = require(path.join(root, 'web-sync.ts'))
 const now = Date.parse('2026-10-23T04:00:00Z')
 const session = { acctype: 'wx', appid: model.WX_MOBILE_APP, openid: 'synthetic_openid_A', access_token: 'synthetic_token_A' }
 const another = { ...session, openid: 'synthetic_openid_B', access_token: 'synthetic_token_B' }
@@ -41,9 +44,15 @@ function mockWeb(options = {}) {
   global.WebViewController = class {
     constructor(init) { this.init = init; this.disposed = false; this.dismissed = false; views.push(this) }
     async loadURL(url) { this.url = url; if (options.throwLoad) throw Error('load failed'); return options.load !== false }
-    async evaluateJavaScript(js) { this.lastJS = js; return js.startsWith('return ') ? false : true }
-    async getCookies(url) { assert.equal(url, model.OFFICIAL_HOME); return options.cancel ? [] : cookies() }
-    present() { return options.cancel ? Promise.resolve() : new Promise(resolve => { this.resolve = resolve }) }
+    async evaluateJavaScript(js) {
+      this.lastJS = js
+      if (js.startsWith('return window.__deltaData')) return { money: money('888'), daily: profit(model.yesterday().replaceAll('-', ''), '777') }
+      if (js.startsWith('return ')) return options.sdkFail ? 'failed' : options.cancel ? 'pending' : 'success'
+      return true
+    }
+    async setCookie(cookie) { this.seeded ??= []; this.seeded.push(cookie); return true }
+    async getCookies(url) { assert.ok([model.OFFICIAL_HOME, model.RECORD_HOME].includes(url)); return options.cancel && !options.earlyCookie ? [] : cookies() }
+    present() { return options.cancel || options.sync ? Promise.resolve() : new Promise(resolve => { this.resolve = resolve }) }
     dismiss() { this.dismissed = true; this.resolve?.() }
     dispose() { this.disposed = true }
   }
@@ -117,23 +126,82 @@ test('request targets Tencent, filters Hafu currency, blocks redirects, and reda
   assert.equal(new URLSearchParams(init.body).get('item'), model.HAFU_ITEM)
   assert.equal(init.timeout, 10)
   assert.equal(await init.handleRedirect(), null)
-  assert.ok(!init.body.includes(session.access_token))
+  const form = new URLSearchParams(init.body)
+  assert.equal(form.get('access_token'), session.access_token)
+  assert.equal(form.get('appid'), session.appid)
+  assert.equal(form.get('needGopenid'), '1')
+  assert.equal(form.get('isPreengage'), '1')
+  assert.equal(form.get('ams_targetappid'), model.WX_GAME_APP)
   transport = async () => { throw Error(session.access_token) }
   await assert.rejects(api.ams(session, ''), e => !e.message.includes(session.access_token))
 })
-test('QR login validates account, stores credentials only in Keychain, disposes WebView', async () => {
+test('QR login confirms SDK authorization, stores credentials only in Keychain, disposes WebView', async () => {
   assert.deepEqual(await auth.loginByWeChatQR(), session)
   assert.deepEqual(store.loadSession(), session)
   assert.equal(views[0].init.ephemeral, true)
   assert.equal(views[0].disposed, true)
   assert.ok(!JSON.stringify([...storage]).includes(session.access_token))
 })
-test('failed account validation keeps existing account and disposes WebView', async () => {
+test('successful authorization remains saved even if game queries are rejected', async () => {
   store.saveSession(another)
   transport = async () => response({ ret: 101, iRet: 101, sMsg: '请先登录' })
-  await assert.rejects(auth.loginByWeChatQR(), e => e.code === 'auth')
-  assert.deepEqual(store.loadSession(), another)
+  await auth.loginByWeChatQR()
+  assert.deepEqual(store.loadSession(), session)
+  const failed = await api.refreshSnapshot(true, now)
+  assert.equal(failed.needsLogin, true)
+  assert.equal(failed.balance.status, 'error')
+  assert.deepEqual(store.loadSession(), session)
   assert.equal(views[0].disposed, true)
+})
+test('SDK failure or premature cookies cannot replace the current account', async () => {
+  store.saveSession(another)
+  mockWeb({ sdkFail: true })
+  await assert.rejects(auth.loginByWeChatQR())
+  assert.deepEqual(store.loadSession(), another)
+  mockWeb({ cancel: true, earlyCookie: true })
+  assert.equal(await auth.loginByWeChatQR(), null)
+  assert.deepEqual(store.loadSession(), another)
+})
+test('official page SDK sync stores results for desktop cache', async () => {
+  store.saveSession(session)
+  mockWeb({ sync: true })
+  const result = await webSync.syncThroughOfficialPage()
+  assert.equal(result.balance.value, '888')
+  assert.equal(result.profit.value, '777')
+  assert.equal(views[0].url, model.RECORD_HOME)
+  assert.equal(views[0].seeded.length, 4)
+  assert.equal(views[0].disposed, true)
+})
+test('own mini-program credentials import preserves the actual appid and account type', () => {
+  const mini = { ...session, appid: 'wx1c36464bbea2507a', acctype: 'mini' }
+  assert.deepEqual(credentials.parseOwnCredentials(JSON.stringify(mini)), mini)
+  assert.deepEqual(credentials.parseOwnCredentials(model.form(mini)), mini)
+  const cookie = Object.entries(mini).map(([k, v]) => `${k}=${v}`).join('; ')
+  assert.deepEqual(credentials.parseOwnCredentials(`Cookie: ${cookie}`), mini)
+  assert.deepEqual(credentials.parseOwnCredentials(JSON.stringify({ headers: { Cookie: cookie } })), mini)
+  assert.throws(() => credentials.parseOwnCredentials(JSON.stringify({ ...mini, headers: { Cookie: cookie.replace(session.openid, another.openid) } })))
+  for (const text of ['', '{', 'openid=fake', JSON.stringify({ ...mini, acctype: 'qc' })]) assert.throws(() => credentials.parseOwnCredentials(text))
+})
+test('diagnostic report excludes raw errors, identities, amounts and tokens', async () => {
+  store.saveSession(session)
+  transport = async () => response({ ret: -4000, sMsg: session.access_token, jData: {} })
+  await api.refreshSnapshot(true, now)
+  const report = diagnostics.diagnosticReport(session)
+  assert.match(report, /AMS\.ret=-4000/)
+  assert.ok(!report.includes(session.openid))
+  assert.ok(!report.includes(session.access_token))
+  assert.ok(!JSON.stringify([...storage]).includes(session.access_token))
+  diagnostics.recordDiagnostic('官网同步', new model.QueryError('api', session.access_token, session.access_token))
+  assert.ok(!diagnostics.diagnosticReport(session).includes(session.access_token))
+})
+test('binding diagnostics distinguish an unbound role from a query failure', async () => {
+  store.saveSession(session)
+  transport = async () => response({ iRet: 0, jData: { bindarea: null } })
+  assert.equal(await api.queryBinding(), false)
+  transport = async () => response({ iRet: 0, jData: { bindarea: { area: '3' } } })
+  assert.equal(await api.queryBinding(), true)
+  transport = async () => response({ iRet: 101 })
+  await assert.rejects(api.queryBinding(), e => e.code === 'auth')
 })
 test('page failure and cancellation release native controller without saving session', async () => {
   mockWeb({ load: false })

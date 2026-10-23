@@ -1,6 +1,6 @@
 {
   "name": "三角洲收益",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "icon": "chart.line.uptrend.xyaxis",
   "color": "green",
   "description": "通过腾讯微信授权查询本人昨日收益和哈夫币余额，提供桌面小组件与离线缓存。",

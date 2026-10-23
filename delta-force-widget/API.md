@@ -1,42 +1,47 @@
-# 接口分析
+# 接口分析与 1.1.0 修复依据
 
-调查日期：2026-10-23。分析范围为腾讯官网 H5 登录资源、公开调用代码及不携带账号凭据的接口响应。没有对游戏二进制逆向，没有手机抓包；未观察到用户的已登录响应。
+调查日期：2026-10-23。检查腾讯官网页面、SDK、公开活动配置及开源调用实现；没有用户已登录响应，未下载运行完整游戏客户端。
 
-## 数据接口
+## 首版中确认的问题
 
-两次查询均为 `POST https://comm.ams.game.qq.com/ide/`，请求体使用 `application/x-www-form-urlencoded`。登录信息通过 `Cookie` 头传递：`acctype=wx`、`appid`、`openid`、`access_token`。参数中 `sIdeToken` 是公开活动参数，不是用户 access token。
+1. 1.0.0 在保存登录前要求余额查询成功，因此接口错误会丢弃已完成的微信授权。1.1.0 以腾讯 SDK 成功回调确认授权，随后保存，查询结果另行报告。
+2. 首版使用通用 comm.ams.game.qq.com 入口。当前官方活动配置使用游戏专属 **dfm.ams.game.qq.com/ide/**，账户类型 7 要求身份映射参数。
+3. 首版失败不便排查。新版记录步骤和数字错误码，区分本机保存、接口鉴权、业务失败和缺少日报，不复制服务端原始错误。
 
-| 指标 | 请求参数 | 响应字段与解释 |
+这些是可确认的代码和配置差异。没有用户登录后的实际请求，不能断言哪项是该账号失败的唯一原因。
+
+## 腾讯一手证据
+
+- [官方战绩页](https://df.qq.com/cp/record202410ver/) 当前引用 [index-yXwCZ2lE.js](https://game.gtimg.cn/images/dfm/cp/record202410ver/index-yXwCZ2lE.js)。页面以 Milo.emit({actId:"21_3LXYAj", token, sData}) 调用，哈夫币参数为 type=3、item=17020000010。
+- [当前公开活动配置](https://comm.ams.game.qq.com/ide/page/21_3LXYAj)：sIdeUrl 为 dfm.ams.game.qq.com/ide/；95ookO / NoOapI / zMemOt / sTzZS2 分别映射 316964 / 316969 / 319386 / 316965。对应账户类型为 7，目标游戏 App ID 为 wx39308a0a1bd83d22，并有角色选择要求。
+- [Milo SDK](https://game.gtimg.cn/images/js/milo-next/latest/milo.min.js)：mergeDataToIDE 加 chart / subchart / token；postData 在账户类型 7 下加入 needGopenid=1、isPreengage=1，通过 flow.sIdeUrl 请求。
+
+## 当前直接查询
+
+POST https://dfm.ams.game.qq.com/ide/，表单编码。openid / access_token / appid / acctype 同时放入 Cookie 和 POST；保留授权原 App ID，加入 needGopenid=1、isPreengage=1、ams_targetappid=wx39308a0a1bd83d22。四元组同时入表单另参考 [AmsRemoteClient.kt](https://github.com/MissKisser/df-item-crafting-monitoring/blob/67d4d0a9e32e65bd4a191f35ba9512eaa29dbdeb/app/src/main/java/com/local/dfcraftmonitor/data/backend/AmsRemoteClient.kt)。
+
+| 指标 | 参数 | 响应 |
 | --- | --- | --- |
-| 总哈夫币 | `iChartId=319386`、`sIdeToken=zMemOt`、`type=3`、`item=17020000010` | `jData.data[]` 中的 `totalMoney`；请求按哈夫币物品 ID 过滤，若响应带物品 ID / 名称还会复核 |
-| 昨日收益 | `iChartId=316969`、`sIdeToken=NoOapI`、`source=2`、`method=dfm/center.recent.detail`、`param={"resourceType":"sol"}` | `jData.data.data.solDetail.recentGain`；必须同时校验 `recentGainDate` |
+| 哈夫币 | chart / subchart 319386，zMemOt，type 3，item 17020000010 | jData.data[].totalMoney |
+| 日报 | chart / subchart 316969，NoOapI，method dfm/center.recent.detail，source 7，param {"resourceType":"sol"} | jData.data.data.solDetail 的 recentGain / recentGainDate |
+| 绑定状态 | chart / subchart 316964，95ookO | jData.bindarea，只读 |
 
-日报接口返回最近一期数据，不假设其一定属于昨天。脚本不向该原始接口传入未经核实的历史日期参数。没有昨日数据时显示 `--`。`recentGain` 的经济口径由腾讯定义，不能保证等于两天现金余额之差，也没有重新从近 50 场战绩计算。哈夫币使用整数文本保存和格式化，避免大数精度丢失。
+原始字段亦与 [Game.php](https://github.com/coolxi-tech/deltaforce/blob/6a9308eeedbc34f0ec898f9de95cb619b8702289/app/controller/Game.php) 核对。
 
-已实际观察到两个接口在无登录时均返回：
+## 官网同步与小程序身份
 
-```json
-{ "ret": 101, "iRet": 101, "sMsg": "非常抱歉，请先登录！" }
-```
+官网同步在临时 WebView 中用已保存登录打开官方战绩页，本人确认角色后，通过官网相同的 Milo.emit 查询两指标。SDK 处理其 Cookie 同步、身份映射和路由。发现网页切换账号时拒绝混用数据；绑定由本人在官网操作，不编造角色签名。
 
-此时响应没有 `jData`，必须先判断登录错误再解析业务字段。接口返回的原始错误不直接展示，以免包含账号信息。两个查询独立处理，单个失败不会丢弃另一个成功值。
+小程序与 H5 的身份作用域可能不同。导入入口只在本机提取本人成功请求的四元组，支持 Cookie / POST 表单 / JSON；缺字段、非微信凭据或冲突输入会拒绝，不执行粘贴内容。它不支持任意请求重放。
 
-## 微信授权
+## REA 实际使用记录
 
-已下载并静态检查的腾讯资源：
+查找官方 [morluto/rea](https://github.com/morluto/rea)，临时安装 rea-agents@6.7.0，对已下载腾讯 JavaScript 运行 analyze-javascript-application。返回 execution_failure，诊断为 worker 启动后退出；doctor 未证明分析环境可用。没有把失败输出算作结论，也未安装原生引擎或修改 Codex 全局配置。
 
-- [官网入口](https://df.qq.com/cp/a20240906main/index.html) 与 [页面逻辑 index.js](https://df.qq.com/cp/a20240906main/js/index.js)。页面明确使用移动微信 App ID `wx1cd4fbe9335888fe`，并接受扫码微信 App ID `wxfa0c35392d06b82f`。
-- [Milo SDK](https://game.gtimg.cn/images/js/milo-next/latest/milo.min.js)。确认 `Milo.loginByWX()`、`Milo.Login.wxCodeToOpenid()`、扫码回调和本机 Cookie 写入路径。
-- [微信移动中转页](https://iu.qq.com/comm-htdocs/login/milosdk/wx_mobile_redirect.html) 与 [官网移动回调页](https://df.qq.com/comm-htdocs/login/milosdk/wx_mobile_callback.html)。确认中转页对 `s_url` 的检查，以及官网使用 SDK 换取登录态的方式。
+本次证据来自直接检查公开资源，不能声称 REA 已成功逆向微信小程序。
 
-扫码方式在腾讯官网调用 `Milo.loginByWX()`；本机方式使用微信 `connect/oauth2/authorize`，本人确认后将含 code / state 的腾讯中转链接交回脚本，由官网 SDK 完成处理。每次授权使用独立临时 WebView，Cookie 读取限于腾讯官网，随后查询哈夫币成功才保存。脚本不包含 AppSecret，也没有自行构造微信 token 交换接口。
+## 口径与限制
 
-本机授权对回调的主机、路径、App ID、账号类型、state、重复参数和时效进行校验。网络查询拒绝重定向，不把账号 Cookie 带到其他目的地。没有自动刷新 access token；登录过期需本人重新授权。
+recentGain 采用腾讯日报口径，不保证等于余额差。日期不是昨日时昨日值为空，应用内说明最近一期日期和金额。金额以整数文本保存。
 
-## 来源与稳定性
-
-原始查询参数的公开实现参考 [zhuba-Ahhh/df-api 的 info.service.ts（固定提交）](https://github.com/zhuba-Ahhh/df-api/blob/66f1225bc2c16f1909352a65fdc0584d48d8dae6/src/info/info.service.ts)。收益和货币字段另与 [Daily.js](https://github.com/Entropy-Increase-Team/delta-force-plugin/blob/1a00e85a8a32078b2fd1124a4776d131fb62eefb/apps/report/Daily.js) 和 [Money.js](https://github.com/Entropy-Increase-Team/delta-force-plugin/blob/1a00e85a8a32078b2fd1124a4776d131fb62eefb/apps/info/Money.js) 核对。
-
-这些是腾讯服务当前被公开代码使用的接口，不是腾讯向本项目提供的稳定开放 API 承诺。接口成功路径依据上述公开结构实现，测试使用合成数据。角色授权范围、真机 Cookie 可用性和实际金额仍需本人账号验收。
-
-Scripting API 依据 [WebViewController](https://scriptingapp.github.io/zh/guide/Device%20Capabilities/WebViewController)、[fetch](https://scriptingapp.github.io/guide/Utilities/Request/fetch) 与 [Widget](https://scriptingapp.github.io/TestFlight/zh/guide/Widget/Widget%20API) 文档及固定版本公开声明检查。
+这是官网内部使用形式，没有面向本项目的稳定开放 API 承诺。真实微信、角色权限和 WidgetKit 行为仍须本人手机验收。

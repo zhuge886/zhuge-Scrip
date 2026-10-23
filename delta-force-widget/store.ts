@@ -1,4 +1,5 @@
 import { emptySnapshot, Metric, QueryError, Session, Snapshot, validSession } from "./model"
+import { clearDiagnostics } from "./diagnostics"
 
 const SESSION_KEY = "zhuge886.delta-force.session.v1"
 const CACHE_KEY = "delta-force.snapshot.v1"
@@ -24,6 +25,7 @@ export function logout(): void {
   Keychain.remove(OWNER_KEY)
   Storage.remove(CACHE_KEY)
   Storage.remove(PENDING_KEY)
+  clearDiagnostics()
 }
 function validMetric(raw: unknown): raw is Metric {
   if (!raw || typeof raw !== "object") return false
@@ -35,6 +37,8 @@ function validMetric(raw: unknown): raw is Metric {
 export function loadSnapshot(session: Session, now = Date.now()): Snapshot {
   const base = emptySnapshot(now)
   base.needsLogin = false
+  base.balance.message = "微信凭据已保存，等待查询余额"
+  base.profit.message = "微信凭据已保存，等待查询日报"
   if (Keychain.get(OWNER_KEY) !== `${session.appid}:${session.openid}`) return base
   const raw = Storage.get<Snapshot>(CACHE_KEY)
   if (raw?.version !== 1 || !validMetric(raw.balance) || !validMetric(raw.profit) || typeof raw.day !== "string" || typeof raw.needsLogin !== "boolean") return base

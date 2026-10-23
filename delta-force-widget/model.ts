@@ -1,6 +1,8 @@
 // Independent of Scripting so date / response parsing can be checked on Node.
 export const OFFICIAL_HOME = "https://df.qq.com/cp/a20240906main/index.html"
-export const AMS_URL = "https://comm.ams.game.qq.com/ide/"
+export const RECORD_HOME = "https://df.qq.com/cp/record202410ver/"
+export const AMS_URL = "https://dfm.ams.game.qq.com/ide/"
+export const WX_GAME_APP = "wx39308a0a1bd83d22"
 export const WX_MOBILE_APP = "wx1cd4fbe9335888fe"
 export const WX_PC_APP = "wxfa0c35392d06b82f"
 export const HAFU_ITEM = "17020000010"
@@ -10,7 +12,7 @@ export type Session = {
   openid: string
   access_token: string
   appid: string
-  acctype: "wx"
+  acctype: "wx" | "mini"
 }
 export type Metric = {
   value: string | null
@@ -26,7 +28,8 @@ export type Snapshot = {
   needsLogin: boolean
 }
 export class QueryError extends Error {
-  constructor(public readonly code: "auth" | "api" | "shape" | "network" | "storage", message: string) {
+  constructor(public readonly code: "auth" | "api" | "shape" | "network" | "storage", message: string,
+    public readonly diagnostic = "") {
     super(message)
     this.name = "QueryError"
   }
@@ -76,15 +79,19 @@ export function assertAms(raw: unknown): Obj {
   const top = object(raw)
   const jData = object(top.jData)
   const inner = object(jData.data)
-  for (const node of [top, jData, inner]) {
-    const failed = ["iRet", "ret", "code"].some(key => key in node && Number(node[key]) !== 0)
+  for (const [index, node] of [top, jData, inner].entries()) {
+    const key = ["iRet", "ret", "code"].find(key => key in node && Number(node[key]) !== 0)
+    const failed = key != null
     if (!failed) continue
+    const rawCode = key ? node[key] : "unknown"
+    const numericCode = /^-?\d{1,10}$/.test(String(rawCode)) ? String(rawCode) : "unknown"
+    const diagnostic = `${["AMS", "jData", "业务"][index]}.${key}=${numericCode}`
     const text = [node.sMsg, node.msg, node.message].filter(x => typeof x === "string").join(" ")
     if (Number(node.iRet) === 101 || Number(node.ret) === 101 || /登录|登陸|登錄|login|token|登录态|授权过期|未授权/i.test(text)) {
-      throw new QueryError("auth", "微信登录已失效，请重新登录")
+      throw new QueryError("auth", "查询接口未接受当前登录，请重新授权或通过官网同步", diagnostic)
     }
     // Never display the server's raw error: it can include account credentials.
-    throw new QueryError("api", "腾讯接口暂不可用，请稍后重试；首次使用请在官方小程序绑定角色")
+    throw new QueryError("api", `查询失败（${diagnostic}），可通过官网确认角色或复制诊断`, diagnostic)
   }
   if (!("jData" in top)) throw new QueryError("shape", "接口响应格式已变化，请检查脚本更新")
   return jData
@@ -105,12 +112,12 @@ export function parseBalance(raw: unknown): string {
   if (value.startsWith("-")) throw new QueryError("shape", "哈夫币余额格式异常")
   return value
 }
-export function parseProfit(raw: unknown, day: string): { value: string | null; message: string } {
+export function parseProfit(raw: unknown, day: string): { value: string | null; message: string; latest?: { day: string; value: string } } {
   const jData = assertAms(raw)
   const detail = object(object(object(jData.data).data).solDetail)
   const actualDay = normalizeDay(detail.recentGainDate)
   if (!actualDay) return { value: null, message: "昨日数据尚未同步或无对局" }
-  if (actualDay !== day) return { value: null, message: `昨日无可用数据（最近 ${actualDay.slice(5)}）` }
+  if (actualDay !== day) return { value: null, message: `昨日暂无日报。最近 ${actualDay} 收益 ${formatAmount(amount(detail.recentGain), true)} 哈夫币`, latest: { day: actualDay, value: amount(detail.recentGain) } }
   return { value: amount(detail.recentGain), message: "烽火地带日报收益" }
 }
 export function emptySnapshot(now = Date.now()): Snapshot {
@@ -120,17 +127,24 @@ export function emptySnapshot(now = Date.now()): Snapshot {
 export function validSession(raw: unknown): Session | null {
   const s = object(raw)
   const validToken = (v: unknown) => typeof v === "string" && /^[a-zA-Z0-9_\-.]{6,2048}$/.test(v)
-  if (s.acctype !== "wx" || ![WX_MOBILE_APP, WX_PC_APP].includes(String(s.appid)) || !validToken(s.openid) || !validToken(s.access_token)) return null
-  return { openid: s.openid as string, access_token: s.access_token as string, appid: s.appid as string, acctype: "wx" }
+  if (!["wx", "mini"].includes(String(s.acctype)) || !/^wx[a-fA-F0-9]{16}$/.test(String(s.appid)) || !validToken(s.openid) || !validToken(s.access_token)) return null
+  return { openid: s.openid as string, access_token: s.access_token as string, appid: s.appid as string, acctype: s.acctype as Session["acctype"] }
 }
 
 export function form(values: Record<string, string>): string {
   return Object.entries(values).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&")
 }
 export function balanceForm(): string {
-  return form({ iChartId: "319386", sIdeToken: "zMemOt", type: "3", item: HAFU_ITEM })
+  return form({ iChartId: "319386", iSubChartId: "319386", sIdeToken: "zMemOt", type: "3", item: HAFU_ITEM })
+}
+export function bindingForm(): string {
+  return form({ iChartId: "316964", iSubChartId: "316964", sIdeToken: "95ookO" })
+}
+export function authForm(session: Session): string {
+  return form({ openid: session.openid, acctype: session.acctype, appid: session.appid, access_token: session.access_token,
+    needGopenid: "1", isPreengage: "1", ams_targetappid: WX_GAME_APP })
 }
 export function profitForm(): string {
   // This endpoint returns the most recent report; the response date is always checked.
-  return form({ iChartId: "316969", sIdeToken: "NoOapI", method: "dfm/center.recent.detail", source: "2", param: JSON.stringify({ resourceType: "sol" }) })
+  return form({ iChartId: "316969", iSubChartId: "316969", sIdeToken: "NoOapI", method: "dfm/center.recent.detail", source: "7", param: JSON.stringify({ resourceType: "sol" }) })
 }
