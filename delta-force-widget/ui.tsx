@@ -1,39 +1,46 @@
 import { VStack, HStack, Text, Spacer, Image } from "scripting"
-import { formatAmount, Metric, Snapshot } from "./model"
+import { formatAmount, reportDate, showBalance, Snapshot, syncTime } from "./model"
 
-const INK = "#DCE8E1"
-const MINT = "#72E5AB"
-const MUTED = "#93A79A"
-function AmountView({ title, metric, signed, small }: { title: string; metric: Metric; signed?: boolean; small: boolean }) {
-  const color = metric.value?.startsWith("-") ? "#FF9588" : signed ? MINT : INK
-  return <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-    <Text font={small ? 10 : 11} foregroundStyle={MUTED}>{title}</Text>
-    <Text font={small ? 22 : 29} fontWeight="bold" monospacedDigit foregroundStyle={color}
-      lineLimit={1} minScaleFactor={0.45}>{formatAmount(metric.value, signed)}</Text>
-    <Text font={9} foregroundStyle={MUTED} lineLimit={1}>{metric.status === "cached" ? "缓存 · 哈夫币" : "哈夫币"}</Text>
-  </VStack>
-}
+export const palette = { ink: "#EDF5EE", mint: "#80EDB0", muted: "#91A99B", panel: "#14251D", page: "#0C1511", loss: "#FFA391" } as const
 export function WalletCard({ snapshot, small = false, url }: { snapshot: Snapshot; small?: boolean; url?: string }) {
-  const info = snapshot.needsLogin ? "点按查看授权与查询状态"
-    : snapshot.balance.status === "cached" || snapshot.profit.status === "cached" ? "离线或授权失效 · 显示缓存"
-    : snapshot.profit.value === null ? snapshot.profit.message
-    : "腾讯日报 · 北京时间"
-  return <VStack alignment="leading" spacing={small ? 6 : 12} padding={small ? 12 : 16}
-    background="#101F18" widgetURL={url} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "leading" }}>
-    <HStack spacing={5}>
-      <Image systemName="triangle.fill" font={10} foregroundStyle={MINT} />
-      <Text font={small ? 11 : 13} fontWeight="semibold" foregroundStyle={INK}>三角洲行动</Text>
-      <Spacer />
-      {!small ? <Text font={10} foregroundStyle={MUTED}>烽火地带</Text> : null}
+  const hasProfit = snapshot.profit.value !== null
+  const balanceVisible = showBalance(snapshot)
+  const color = snapshot.profit.value?.startsWith("-") ? palette.loss : palette.mint
+  const saved = snapshot.profit.status === "cached"
+  const footer = snapshot.needsLogin ? (hasProfit ? "登录过期 · 点按重新扫码" : "点按打开 · 微信扫码")
+    : !hasProfit ? "暂无日报 · 点按刷新"
+    : `${saved ? "上次同步" : "更新于"} ${syncTime(snapshot.profit.updatedAt)}`
+  return <VStack alignment="leading" spacing={small ? 4 : 6} padding={small ? 12 : 16}
+    background={{ colors: ["#1C3D2C", "#0D1B14"], startPoint: "topLeading", endPoint: "bottomTrailing" }}
+    widgetURL={url} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "leading" }}>
+    <HStack spacing={5} frame={{ maxWidth: "infinity" }}>
+      <Image systemName="triangle.fill" font={small ? 9 : 11} foregroundStyle={palette.mint} />
+      <Text font={small ? 11 : 13} fontWeight="semibold" foregroundStyle={palette.ink}>三角洲行动</Text>
+      <Spacer minLength={0} />
+      {!small ? <Text font={10} foregroundStyle={palette.muted}>烽火地带</Text> : null}
     </HStack>
-    {small ? <VStack alignment="leading" spacing={5}>
-      <AmountView title={`昨日收益 · ${snapshot.day.slice(5)}`} metric={snapshot.profit} signed small />
-      <AmountView title="总哈夫币" metric={snapshot.balance} small />
-    </VStack> : <HStack spacing={18}>
-      <AmountView title={`昨日收益 · ${snapshot.day.slice(5)}`} metric={snapshot.profit} signed small={false} />
-      <AmountView title="总哈夫币" metric={snapshot.balance} small={false} />
-    </HStack>}
     <Spacer minLength={0} />
-    <Text font={small ? 8 : 10} foregroundStyle={MUTED} lineLimit={1}>{info}</Text>
+    <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+      <HStack spacing={small ? 5 : 8}>
+        <Text font={small ? 10 : 12} foregroundStyle={palette.muted}>最近收益</Text>
+        <Text font={small ? 10 : 12} fontWeight="medium" foregroundStyle={palette.ink}>{reportDate(snapshot.day)}</Text>
+      </HStack>
+      <Text font={small ? 30 : 36} fontWeight="bold" monospacedDigit foregroundStyle={color}
+        lineLimit={1} minScaleFactor={0.45}>
+        {hasProfit ? formatAmount(snapshot.profit.value, true) : "待同步"}
+      </Text>
+      {!balanceVisible ? <Text font={small ? 9 : 10} foregroundStyle={palette.muted}>哈夫币 · 最近一份游戏日报</Text> : null}
+    </VStack>
+    <Spacer minLength={0} />
+    {balanceVisible ? <HStack spacing={6} frame={{ maxWidth: "infinity" }}>
+      <Text font={small ? 9 : 11} foregroundStyle={palette.muted}>总哈夫币</Text>
+      <Spacer minLength={0} />
+      <Text font={small ? 11 : 14} fontWeight="semibold" monospacedDigit foregroundStyle={palette.ink}
+        lineLimit={1} minScaleFactor={0.5}>{formatAmount(snapshot.balance.value)}</Text>
+    </HStack> : null}
+    <HStack spacing={4}>
+      <Image systemName={saved || snapshot.needsLogin ? "clock" : "arrow.clockwise"} font={8} foregroundStyle={palette.muted} />
+      <Text font={small ? 8 : 10} foregroundStyle={palette.muted} lineLimit={1}>{footer}</Text>
+    </HStack>
   </VStack>
 }

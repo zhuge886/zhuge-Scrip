@@ -1,19 +1,18 @@
-import { Widget, VStack, Text, Script } from "scripting"
-import { REFRESH_MS } from "./model"
+import { Widget, Script } from "scripting"
+import { emptySnapshot, REFRESH_MS } from "./model"
 import { refreshSnapshot } from "./api"
+import { loadSession, loadSnapshot } from "./store"
 import { WalletCard } from "./ui"
 
 async function run() {
+  let snapshot = emptySnapshot()
   try {
-    const snapshot = await refreshSnapshot()
-    const url = Script.createRunURLScheme(Script.name)
-    const card = WalletCard({ snapshot, small: Widget.family === "systemSmall", url })
-    Widget.present(card, { policy: "after", date: new Date(Date.now() + REFRESH_MS) })
-  } catch {
-    Widget.present(<VStack padding widgetURL={Script.createRunURLScheme(Script.name)}>
-      <Text>三角洲收益</Text>
-      <Text font="caption">数据暂不可用，点按打开查看</Text>
-    </VStack>, { policy: "after", date: new Date(Date.now() + REFRESH_MS) })
-  }
+    const session = loadSession()
+    if (session) snapshot = loadSnapshot(session)
+    snapshot = await refreshSnapshot()
+  } catch { /* Keep the last available report when a refresh or cache write fails. */ }
+  Widget.present(WalletCard({
+    snapshot, small: Widget.family === "systemSmall", url: Script.createRunURLScheme(Script.name),
+  }), { policy: "after", date: new Date(Date.now() + REFRESH_MS) })
 }
 run()

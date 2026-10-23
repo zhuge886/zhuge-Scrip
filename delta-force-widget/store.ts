@@ -1,11 +1,8 @@
-import { emptySnapshot, Metric, QueryError, Session, Snapshot, validSession } from "./model"
-import { clearDiagnostics } from "./diagnostics"
+import { amount, emptySnapshot, Metric, normalizeDay, object, QueryError, Session, Snapshot, validSession } from "./model"
 
 const SESSION_KEY = "zhuge886.delta-force.session.v1"
 const CACHE_KEY = "delta-force.snapshot.v1"
 const OWNER_KEY = "delta-force.cache-owner.v1"
-export const PENDING_KEY = "delta-force.wechat-pending.v1"
-
 export function loadSession(): Session | null {
   const value = Keychain.get(SESSION_KEY)
   if (!value) return null
@@ -14,43 +11,54 @@ export function loadSession(): Session | null {
 export function saveSession(session: Session): void {
   if (!validSession(session)) throw new QueryError("storage", "登录凭据无效，未保存")
   if (!Keychain.set(SESSION_KEY, JSON.stringify(session), { accessibility: "first_unlock_this_device", synchronizable: false })) {
-    throw new QueryError("storage", "无法保存微信登录，请检查钥匙串权限")
+    throw new QueryError("storage", "无法保存登录，请检查钥匙串权限")
   }
-  // A cache never crosses accounts. Owner metadata is kept inside the Keychain.
   Storage.remove(CACHE_KEY)
   Keychain.remove(OWNER_KEY)
 }
 export function logout(): void {
-  if (Keychain.contains(SESSION_KEY) && !Keychain.remove(SESSION_KEY)) throw new QueryError("storage", "无法清除登录，请检查钥匙串权限")
+  if (Keychain.contains(SESSION_KEY) && !Keychain.remove(SESSION_KEY)) throw new QueryError("storage", "无法退出，请检查钥匙串权限")
   Keychain.remove(OWNER_KEY)
   Storage.remove(CACHE_KEY)
-  Storage.remove(PENDING_KEY)
-  clearDiagnostics()
+  Storage.remove("delta-force.wechat-pending.v1")
+  Storage.remove("delta-force.diagnostics.v1")
 }
 function validMetric(raw: unknown): raw is Metric {
   if (!raw || typeof raw !== "object") return false
   const m = raw as Metric
   return (m.value === null || typeof m.value === "string" && /^-?\d+$/.test(m.value)) &&
-    (m.updatedAt === null || Number.isFinite(m.updatedAt)) &&
+    (m.updatedAt === null || typeof m.updatedAt === "number" && Number.isFinite(m.updatedAt)) &&
     ["ok", "missing", "cached", "error"].includes(m.status) && typeof m.message === "string"
 }
 export function loadSnapshot(session: Session, now = Date.now()): Snapshot {
-  const base = emptySnapshot(now)
+  const base = emptySnapshot()
   base.needsLogin = false
-  base.balance.message = "微信凭据已保存，等待查询余额"
-  base.profit.message = "微信凭据已保存，等待查询日报"
+  base.profit.message = "点击刷新，查看最近游戏收益"
   if (Keychain.get(OWNER_KEY) !== `${session.appid}:${session.openid}`) return base
-  const raw = Storage.get<Snapshot>(CACHE_KEY)
-  if (raw?.version !== 1 || !validMetric(raw.balance) || !validMetric(raw.profit) || typeof raw.day !== "string" || typeof raw.needsLogin !== "boolean") return base
+  const raw = object(Storage.get<unknown>(CACHE_KEY))
+  if (![1, 2].includes(Number(raw.version)) || !validMetric(raw.balance) || !validMetric(raw.profit)) return base
+  let day = normalizeDay(raw.day)
+  let profit: Metric = { ...raw.profit }
+  // Upgrade the 1.1 cache: older reports were stored in its locally generated message.
+  // Recover the actual report date and amount instead of retaining an empty hero.
+  if (raw.version === 1 && profit.value === null) {
+    const m = /最近 (\d{4}-\d{2}-\d{2}) 收益 ([+−-]?[\d,]+) 哈夫币/.exec(profit.message)
+    day = m ? normalizeDay(m[1]) : null
+    if (m && day) profit = { ...profit, value: amount(m[2].replace(/[+,]/g, "").replace("−", "-")), status: "cached", message: "已保存的最近日报" }
+  }
+  if (!day || profit.value === null) { day = null; profit = { ...base.profit } }
+  const cached = (metric: Metric): Metric => metric.value !== null && metric.status === "ok" &&
+    (metric.updatedAt === null || now < metric.updatedAt || now - metric.updatedAt >= 5 * 60000)
+      ? { ...metric, status: "cached" } : { ...metric }
   return {
-    ...raw, day: base.day,
-    balance: { ...raw.balance },
-    // Yesterday changes at midnight in Shanghai. Do not relabel yesterday's cache.
-    profit: raw.day === base.day ? { ...raw.profit } : { ...base.profit, message: "新一天，等待昨日数据" },
+    version: 2, day,
+    checkedAt: typeof raw.checkedAt === "number" && Number.isFinite(raw.checkedAt) ? raw.checkedAt : null,
+    profit: cached(profit), balance: cached(raw.balance),
+    needsLogin: raw.needsLogin === true,
   }
 }
 export function saveSnapshot(session: Session, snapshot: Snapshot): void {
   if (!Storage.set(CACHE_KEY, snapshot) || !Keychain.set(OWNER_KEY, `${session.appid}:${session.openid}`, { synchronizable: false })) {
-    throw new QueryError("storage", "查询已完成，但缓存保存失败")
+    throw new QueryError("storage", "数据已取得，但暂时无法保存缓存")
   }
 }
