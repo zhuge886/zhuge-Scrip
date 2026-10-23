@@ -21,7 +21,7 @@ function runtime() {
     Storage: { get: (k) => storage.get(k), set: (k, v) => storage.set(k, v), remove: (k) => storage.delete(k) },
     Keychain: { contains: (k) => keychain.has(k), get: (k) => keychain.get(k),
       set: (k, v) => keychain.set(k, v), remove: (k) => keychain.delete(k) },
-    setTimeout: () => 1, clearTimeout() {},
+    setTimeout: (callback, milliseconds) => { if (milliseconds <= 1000) queueMicrotask(callback); return 1 }, clearTimeout() {},
     createElement: (type, props, ...children) => typeof type === 'function'
       ? type({ ...props, children }) : { type, props: props ?? {}, children },
     Dialog: { async alert() {} }
@@ -64,7 +64,7 @@ function balanceItem(value = '23.50') {
 function textOf(node) {
   if (node == null || node === false) return ''
   if (typeof node !== 'object') return String(node)
-  return (Array.isArray(node) ? node : [node.props?.header, node.props?.footer, node.props?.label,
+  return (Array.isArray(node) ? node : [node.props?.title, node.props?.header, node.props?.footer, node.props?.label,
     ...(node.children ?? [])]).map(textOf).join(' ')
 }
 function configure(r) {
@@ -90,10 +90,12 @@ async function main() {
     const r = runtime(), a = account()
     assert.equal(r.load('accounts').selectAccounts(manual(r), [a])[0], a)
   })
-  await check('missing routing metadata is explicit and never fabricated', () => {
-    const r = runtime(), p = manual(r); p.orgNo = ''
-    assert.throws(() => r.load('accounts').selectAccounts(p, []), /不能仅凭户号/)
-    assert.throws(() => r.load('accounts').selectAccounts(fixture(r), []), /数字代码/)
+  await check('region is required while organization and scene can be left unspecified', () => {
+    const r = runtime(), p = { ...manual(r), orgNo: '', elecType: '' }
+    const selected = r.load('accounts').selectAccounts(p, [])[0]
+    assert.equal(selected.org, ''); assert.equal(selected.elec, '')
+    assert.throws(() => r.load('accounts').selectAccounts({ ...p, provinceCode: '' }, []), /选择/)
+    assert.throws(() => r.load('accounts').selectAccounts(fixture(r), []), /数字/)
   })
   await check('rejects blank and masked household numbers', () => {
     const r = runtime()
@@ -147,8 +149,8 @@ async function main() {
   })
   await check('empty or malformed balance response fails instead of showing zero', async () => {
     const r = runtime(), query = r.load('vendor/sgcc_protocol').queryAccount
-    for (const response of [{ list: [] }, { list: [{}] }, { list: [{ sumMoney: '' }] }]) {
-      await assert.rejects(query({ sess: {}, authed: async () => response }, account(), { scope: 'balance' }), /未返回/)
+    for (const response of [{ list: [] }, { list: [{}] }, { list: [{ sumMoney: '' }] }, { list: [{ historyOwe: 0 }] }]) {
+      await assert.rejects(query({ sess: {}, authed: async () => response }, account(), { scope: 'balance' }), (e) => e.code === 'empty_balance')
     }
   })
   await check('a real zero balance is a successful result', async () => {
@@ -171,7 +173,7 @@ async function main() {
   await check('manual client can query without any bound accounts', async () => {
     const r = runtime(); configure(r); const vendor = mockSession(r)
     vendor.SgApp.prototype.authed = async () => ({ list: [{ consType: '1', sumMoney: 12 }] })
-    const result = await r.load('api/client').getData({ force: true })
+    const result = await r.load('api/client').getData({ force: true, discover: true })
     assert.equal(result.list.length, 1); assert.equal(result.list[0].userInfo.consNo_dst, '0001234567')
     assert.equal(result.list[0].eleBill.sumMoney, 12)
   })
@@ -184,10 +186,10 @@ async function main() {
     const r = runtime(), { store, p, key } = configure(r), vendor = mockSession(r)
     vendor.SgApp.prototype.authed = async () => { throw new Error('测试网络失败') }
     store.saveCache({ sourceKey: key, fetchedAt: 1, list: [balanceItem()], warnings: [] })
-    const cached = await r.load('api/client').getData({ force: true })
+    const cached = await r.load('api/client').getData({ force: true, discover: true })
     assert.ok(cached.error); assert.equal(cached.fetchedAt, 1)
     store.savePreference({ ...p, consNo: '0007654321' })
-    await assert.rejects(r.load('api/client').getData({ force: true }), /测试网络失败/)
+    await assert.rejects(r.load('api/client').getData({ force: true, discover: true }), /测试网络失败/)
   })
   await check('a configuration change during a request cannot overwrite another household cache', async () => {
     const r = runtime(), { store, p, key } = configure(r), vendor = mockSession(r)
@@ -196,7 +198,7 @@ async function main() {
       store.savePreference({ ...p, consNo: '0007654321' }); store.saveCache(sentinel)
       return { list: [{ consType: '1', sumMoney: 5 }] }
     }
-    const result = await r.load('api/client').getData({ force: true })
+    const result = await r.load('api/client').getData({ force: true, discover: true })
     assert.equal(result.sourceKey, key); assert.equal(store.loadCache(), sentinel)
   })
   await check('password changes invalidate cached data and use the isolated keychain prefix', () => {
@@ -204,6 +206,112 @@ async function main() {
     store.saveCache({ sourceKey: 'old' }); store.setPassword('new-test-only-password')
     assert.equal(store.loadCache(), null)
     assert.ok(r.keychain.has('zhuge.sgcc.password')); assert.equal(r.keychain.has('sgcc.password'), false)
+  })
+  await check('automatic discovery changes only the scene and stops at the first valid zero balance', async () => {
+    const r = runtime(), calls = [], progress = []
+    const app = { sess: {}, async authed(endpoint, payload) {
+      const a = payload.data.list[0]; calls.push(a)
+      if (a.sceneType !== '02') return { list: [] }
+      return { list: [{ consNoSrc: '0001234567', consType: '1', sumMoney: 0, orgNo: '1110209', elecTypeCode: '02' }] }
+    } }
+    const input = { ...account(), consNo: '0001234567', org: '', elec: '' }
+    const out = await r.load('api/probe').probeBalance(app, input, { pause: async () => {}, onProgress: (v) => progress.push(v) })
+    assert.equal(calls.length, 2); assert.equal(calls[0].sceneType, '01'); assert.equal(calls[1].sceneType, '02')
+    assert.ok(calls.every((a) => !('orgNo' in a) && a.consNoSrc === input.src && a.proCode === input.pro))
+    assert.equal(out.account.org, '1110209'); assert.equal(out.account.elec, '02')
+    assert.equal(out.data.householdVerified, true); assert.equal(out.data.eleBill.sumMoney, 0)
+    assert.match(progress[1], /店铺/)
+  })
+  await check('exhausted discovery is capped at five requests without scanning organizations or regions', async () => {
+    const r = runtime(), calls = []
+    const app = { sess: {}, authed: async (endpoint, payload) => { calls.push(payload.data.list[0]); return { list: [] } } }
+    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, { pause: async () => {} }), /全部候选类型/)
+    assert.equal(calls.length, 5); assert.equal(new Set(calls.map((a) => a.sceneType)).size, 5)
+    assert.ok(calls.every((a) => !('orgNo' in a) && a.proCode === '11102' && a.consNoSrc === '0001234567'))
+  })
+  await check('an explicitly chosen scene makes one attempt and is never silently changed', async () => {
+    const r = runtime(); let calls = 0
+    const app = { sess: {}, authed: async () => { calls++; return { list: [] } } }
+    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), elec: '04' }, { pause: async () => {} }))
+    assert.equal(calls, 1)
+  })
+  await check('authentication, rate limits, network failures and permissions stop discovery immediately', async () => {
+    for (const [code, message] of [['RK006', '需人机验证'], ['rate_limit', '请求过于频繁'],
+      ['net', '连不上国网服务器'], ['auth', '登录已失效'], ['403', '户号未绑定，无权限']]) {
+      const r = runtime(); let calls = 0
+      const app = { sess: {}, authed: async () => { calls++; throw Object.assign(new Error(message), { code }) } }
+      await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), elec: '' }, { pause: async () => {} }), /已停止/)
+      assert.equal(calls, 1, code)
+    }
+  })
+  await check('an organization-required error is not retried as different scenes', async () => {
+    const r = runtime(); let calls = 0
+    const app = { sess: {}, authed: async () => { calls++; throw new Error('供电单位代码不能为空') } }
+    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, { pause: async () => {} }), /供电单位代码不能为空/)
+    assert.equal(calls, 1)
+  })
+  await check('a mismatched household response is rejected before saving or trying another scene', async () => {
+    const r = runtime(); let calls = 0
+    const app = { sess: {}, authed: async () => { calls++; return { list: [{ consNoSrc: '0007654321', consType: '1', sumMoney: 88 }] } } }
+    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), elec: '' }, { pause: async () => {} }), /户号不匹配/)
+    assert.equal(calls, 1); assert.equal(r.load('store').loadResolution(), null)
+  })
+  await check('a matching entry can be selected from a response containing multiple households', async () => {
+    const r = runtime(), out = await r.load('vendor/sgcc_protocol').queryAccount({ sess: {},
+      authed: async () => ({ list: [{ consNoSrc: '0007654321', sumMoney: 9, consType: '1' },
+        { consNoSrc: '0001234567', sumMoney: 17, consType: '1' }] }) }, account(), { scope: 'balance' })
+    assert.equal(out.eleBill.sumMoney, 17); assert.equal(out.householdVerified, true)
+  })
+  await check('ambiguous multi-entry responses without household identities are rejected', async () => {
+    const r = runtime()
+    await assert.rejects(r.load('vendor/sgcc_protocol').queryAccount({ sess: {},
+      authed: async () => ({ list: [{ sumMoney: 9 }, { sumMoney: 17 }] }) }, account(), { scope: 'balance' }), /不匹配/)
+  })
+  await check('a saved scene is tried first while preserving the explicit household and province', async () => {
+    const r = runtime(), calls = []
+    const app = { sess: {}, authed: async (endpoint, payload) => { calls.push(payload.data.list[0]); return { list: [{ sumMoney: 4, consType: '1' }] } } }
+    await r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, {
+      preferred: { ...account(), org: '1110209', elec: '03' }, pause: async () => {} })
+    assert.equal(calls.length, 1); assert.equal(calls[0].sceneType, '03'); assert.equal(calls[0].orgNo, '1110209')
+  })
+  await check('the client learns a working combination and the widget reuses it with one request', async () => {
+    const r = runtime(), { store, p } = configure(r), vendor = mockSession(r), scenes = []
+    store.savePreference({ ...p, orgNo: '', elecType: '' })
+    vendor.SgApp.prototype.authed = async (endpoint, payload) => {
+      const scene = payload.data.list[0].sceneType; scenes.push(scene)
+      return scene === '02' ? { list: [{ consNoSrc: p.consNo, consType: '1', sumMoney: 3, orgNo: '1110209' }] } : { list: [] }
+    }
+    await r.load('api/client').getData({ force: true, discover: true })
+    assert.equal(store.loadResolution().account.elec, '02'); assert.equal(store.loadResolution().account.org, '1110209')
+    assert.equal(store.loadPreference().elecType, '')
+    scenes.length = 0; store.clearCache()
+    const out = await r.load('api/client').getData()
+    assert.equal(scenes.length, 1); assert.equal(scenes[0], '02'); assert.equal(out.list[0].eleBill.sumMoney, 3)
+  })
+  await check('a fresh widget without a successful combination makes no login or probe requests', async () => {
+    const r = runtime(); configure(r)
+    let calls = 0; r.load('vendor/sgcc_protocol').SgApp.prototype.ensure = async () => { calls++; return { accounts: [] } }
+    await assert.rejects(r.load('api/client').getData(), /自动识别并查询/)
+    assert.equal(calls, 0)
+  })
+  await check('saved combinations are isolated from other household or province settings', async () => {
+    const r = runtime(), { store, p, key } = configure(r)
+    store.saveResolution({ sourceKey: key, account: account(), savedAt: Date.now() })
+    for (const patch of [{ consNo: '0007654321' }, { provinceCode: '32101' }]) {
+      store.savePreference({ ...p, ...patch })
+      await assert.rejects(r.load('api/client').getData(), /自动识别并查询/)
+    }
+  })
+  await check('supplementary detail failures retain the balance already obtained', async () => {
+    const r = runtime(), { store, p } = configure(r), vendor = mockSession(r)
+    store.savePreference({ ...p, queryScope: 'full' })
+    vendor.SgApp.prototype.authed = async (endpoint) => {
+      if (!endpoint.includes('balance-front')) throw Object.assign(new Error('网络超时'), { code: 'net' })
+      return { list: [{ consNoSrc: p.consNo, sumMoney: 8, consType: '1' }] }
+    }
+    const result = await r.load('api/client').getData({ force: true, discover: true })
+    assert.equal(result.list[0].eleBill.sumMoney, 8)
+    assert.ok(result.warnings.some((message) => message.includes('用电明细查询失败')))
   })
   for (const family of ['systemSmall', 'systemMedium', 'accessoryRectangular', 'accessoryCircular', 'accessoryInline']) {
     await check(`renders balance-only data without invented usage totals (${family})`, async () => {
@@ -214,9 +322,11 @@ async function main() {
       assert.match(text, /23\.50/); assert.doesNotMatch(text, /年度.*0|第.*梯度/)
     })
   }
-  await check('the settings screen explains the unverified manual-query requirements', () => {
+  await check('the settings screen offers named regions and scenes with optional metadata', () => {
     const r = runtime(), tree = r.load('views/Settings.tsx').Settings(), text = textOf(tree)
-    assert.match(text, /待验证/); assert.match(text, /不能仅填户号查询/)
+    assert.match(text, /江苏/); assert.match(text, /住宅/); assert.match(text, /新能源/)
+    assert.match(text, /供电单位可留空/); assert.match(text, /自动识别并查询/)
+    assert.doesNotMatch(text, /原查询返回的省份代码|orgNo|constType/)
   })
   process.stdout.write(`Passed ${checks} offline checks; no real State Grid account or endpoint was used.\n`)
 }

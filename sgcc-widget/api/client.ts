@@ -5,12 +5,16 @@ import {
   getPassword,
   loadCache,
   loadPreference,
-  saveCache
+  loadResolution,
+  saveCache,
+  saveResolution
 } from '../store'
 import type { Cache } from '../store'
 import type { RawAccount } from '../data'
 import type { Preference } from '../store'
 import { normalizePhone, selectAccounts, sourceKey } from '../accounts'
+import type { PowerAccount } from '../accounts'
+import { probeBalance } from './probe'
 
 /** Same as the Scriptable version: at most one round of requests every 4 hours. */
 export const MIN_FETCH_INTERVAL_MS = 4 * 60 * 60 * 1000
@@ -70,17 +74,56 @@ function createApp(preference = loadPreference()) {
   return new SgApp(createCtx(String(smsCode || '').trim()), normalizePhone(phone), password)
 }
 
-async function fetchAccounts(preference: Preference) {
+async function fetchAccounts(preference: Preference, discover: boolean, onProgress?: (message: string) => void) {
+  onProgress?.('正在登录网上国网…')
   const app = createApp(preference)
   const { accounts: bound = [] } = await app.ensure()
   const accounts = selectAccounts(preference, bound)
 
   const list: (RawAccount | null)[] = []
   const warnings: string[] = []
+  let queryInfo: string | undefined
   let error: unknown
   for (const account of accounts) {
     try {
-      const item = await queryAccount(app, account, { scope: preference.queryScope })
+      let item: RawAccount
+      const isUnboundManual = preference.queryMode === 'manual' &&
+        !bound.some((entry: PowerAccount) => entry.src === account.src || entry.consNo === account.consNo)
+      if (isUnboundManual) {
+        const key = sourceKey(preference)
+        const saved = loadResolution()
+        const preferred = saved?.sourceKey === key ? saved.account : undefined
+        if (discover) {
+          const resolved = await probeBalance(app, account, { preferred, onProgress })
+          queryInfo = resolved.queryInfo
+          item = resolved.data
+          if (sourceKey(loadPreference()) === key) {
+            saveResolution({ sourceKey: key, account: resolved.account, savedAt: Date.now() })
+          }
+          if (preference.queryScope === 'full') {
+            onProgress?.('余额已取得，正在查询用电明细…')
+            try {
+              const full: RawAccount = await queryAccount(app, resolved.account, { scope: 'full' })
+              item = { ...full, eleBill: resolved.data.eleBill,
+                arrearsOfFees: resolved.data.arrearsOfFees,
+                availability: { balance: true, daily: !!full.availability?.daily, monthly: !!full.availability?.monthly } }
+            } catch (error) {
+              item = { ...item, warnings: [...(item.warnings ?? []), `余额已取得，用电明细查询失败：${errorMessage(error)}`] }
+            }
+          }
+        } else if (preferred) {
+          // Widgets reuse one proven combination; discovery is user initiated.
+          item = await queryAccount(app, preferred, { scope: preference.queryScope })
+          queryInfo = '使用上次成功保存的户号查询组合'
+        } else {
+          throw new Error('请先在脚本中选择地区并点「自动识别并查询」；小组件不会自动轮试类型')
+        }
+      } else {
+        item = await queryAccount(app, account, { scope: preference.queryScope })
+        if (preference.queryMode === 'manual' && sourceKey(loadPreference()) === sourceKey(preference)) {
+          saveResolution({ sourceKey: sourceKey(preference), account, savedAt: Date.now() })
+        }
+      }
       list.push(item)
       warnings.push(...(item.warnings ?? []))
     } catch (e) {
@@ -91,7 +134,7 @@ async function fetchAccounts(preference: Preference) {
     }
   }
   if (list.every((item) => !item)) throw error
-  return { list, warnings }
+  return { list, warnings, queryInfo }
 }
 
 export type DataResult = Cache & {
@@ -108,7 +151,9 @@ export function errorMessage(e: unknown): string {
  * Cached data when it is younger than 4 hours, otherwise a fresh fetch. A
  * failed fetch falls back to the cache; only with no cache at all does it throw.
  */
-export async function getData({ force = false } = {}): Promise<DataResult> {
+export async function getData({ force = false, discover = false, onProgress }: {
+  force?: boolean; discover?: boolean; onProgress?: (message: string) => void
+} = {}): Promise<DataResult> {
   const cache = loadCache()
   const preference = loadPreference()
   const key = sourceKey(preference)
@@ -117,7 +162,11 @@ export async function getData({ force = false } = {}): Promise<DataResult> {
     return matchingCache
   }
   try {
-    const result = await fetchAccounts(preference)
+    const saved = loadResolution()
+    if (preference.queryMode === 'manual' && !discover && saved?.sourceKey !== key) {
+      throw new Error('请先在脚本中选择地区并点「自动识别并查询」；小组件不会自动轮试类型')
+    }
+    const result = await fetchAccounts(preference, discover, onProgress)
     const next: Cache = { sourceKey: key, fetchedAt: Date.now(), ...result }
     // A settings change during the request must not overwrite the new account's cache.
     if (sourceKey(loadPreference()) === key) saveCache(next)

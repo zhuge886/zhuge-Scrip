@@ -342,8 +342,13 @@ class SgApp {
     const body = JSON.stringify({ data, sign: sm3hex(skey + data + ts), skey, timestamp: ts });
     const req = { headers: this.headers(loginP, authed), body, timeout: 20000 };
     let text;
-    try { const r = await this.ctx.http.post(SG_BASE + path, req); text = await r.text(); if (r.status >= 500) throw new Error('HTTP ' + r.status); }
-    catch (e) { throw new SgError('net', '连不上国网服务器：' + ((e && e.message) || e)); }
+    try {
+      const r = await this.ctx.http.post(SG_BASE + path, req);
+      if (r.status === 429) throw new SgError('rate_limit', '国网请求过于频繁，请稍后重试');
+      if (r.status === 401 || r.status === 403) throw new SgError('auth', '国网拒绝访问（HTTP ' + r.status + '），请检查登录或授权');
+      text = await r.text(); if (r.status >= 500) throw new Error('HTTP ' + r.status);
+    }
+    catch (e) { if (e instanceof SgError) throw e; throw new SgError('net', '连不上国网服务器：' + ((e && e.message) || e)); }
     let outer; try { outer = JSON.parse(text); } catch (_) { throw new SgError('net', '国网返回了无法识别的内容'); }
     if (!outer.respKey || !outer.encryptData) throw new SgError(outer.code || 'net', outer.message || '国网返回异常');
     const k2 = utf8dec(sm2DecryptKey(String(outer.respKey), CLIENT_PRIV));
@@ -444,13 +449,13 @@ async function queryAccount(app, a, { scope = 'full' } = {}) {
   const daily = [];
   const warnings = [];
   let dailyAvailable = false, monthlyAvailable = false;
-  const isAuthError = (e) => ['-200', '-201', '4006', 'RK007', 'RK008', 'RK1003'].includes(String(e && e.code || ''));
+  const isAuthError = (e) => ['net', 'auth', 'sms', 'sms_fail', 'rate_limit', '-200', '-201', '4006'].includes(String(e && e.code || '')) || /^RK\d+$/i.test(String(e && e.code || ''));
   let monthTotal = NaN;
   for (let off = 0; scope === 'full' && off < 2; off++) {
     let y = n.y, m = n.m - off; if (m < 1) { m += 12; y -= 1; }
     const [s, e] = monthRange(y, m);
     try {
-      const d = await app.authed(P_DAILY, { serviceCode: 'BCP_000026', source: 'app', target: a.pro, data: { acctId: 'acctid01', channelCode: 'SGAPP', consNo: a.src, consNosrc: a.src, endTime: e, consType: consType(a), funcCode: 'ALIPAY_01', orgNo: a.org, proCode: a.pro, promotCode: '1', promotType: '1', serialNo: '', srvCode: '', startTime: s, userName: 'acctid01' } });
+      const d = await app.authed(P_DAILY, { serviceCode: 'BCP_000026', source: 'app', target: a.pro, data: { acctId: 'acctid01', channelCode: 'SGAPP', consNo: a.src, consNosrc: a.src, endTime: e, consType: consType(a), funcCode: 'ALIPAY_01', ...(a.org ? { orgNo: a.org } : {}), proCode: a.pro, promotCode: '1', promotType: '1', serialNo: '', srvCode: '', startTime: s, userName: 'acctid01' } });
       if (!Array.isArray(d.sevenEleList)) throw new Error('日用电接口未返回明细');
       dailyAvailable = true;
       (Array.isArray(d.sevenEleList) ? d.sevenEleList : []).forEach((x) => {
@@ -488,16 +493,27 @@ async function queryAccount(app, a, { scope = 'full' } = {}) {
     }
   }
   let bal = null;
+  let balanceError = null;
+  let householdVerified = false;
   try {
-    const d = await app.authed(P_BAL, { serviceCode: '0101143', source: 'app', target: a.pro, data: { srvCode: '', serialNo: '', channelCode: '0902', funcCode: 'A1007200', acctId: app.sess.userId, userName: 'acctid01', promotType: '1', promotCode: '1', userAccountId: app.sess.userId, list: [{ consNoSrc: a.src, proCode: a.pro, sceneType: a.elec, consNo: a.consNo, orgNo: a.org }] } });
-    bal = (Array.isArray(d.list) ? d.list : []).find((x) => x && typeof x === 'object') || null;
+    const d = await app.authed(P_BAL, { serviceCode: '0101143', source: 'app', target: a.pro, data: { srvCode: '', serialNo: '', channelCode: '0902', funcCode: 'A1007200', acctId: app.sess.userId, userName: 'acctid01', promotType: '1', promotCode: '1', userAccountId: app.sess.userId, list: [{ consNoSrc: a.src, proCode: a.pro, sceneType: a.elec, consNo: a.consNo, ...(a.org ? { orgNo: a.org } : {}) }] } });
+    const entries = (Array.isArray(d.list) ? d.list : []).filter((x) => x && typeof x === 'object' && !Array.isArray(x));
+    const ids = (entry) => ['consNoSrc', 'consNosrc', 'consNo_dst', 'powerUserNo_dst', 'consNo'].map((key) => clean(entry[key])).filter((v) => /^\d+$/.test(v));
+    bal = entries.find((entry) => ids(entry).includes(a.src)) || null;
+    if (bal) householdVerified = true;
+    else {
+      if (entries.some((entry) => ids(entry).length) || entries.length > 1) throw new SgError('identity_mismatch', '余额响应户号不匹配，已停止查询');
+      bal = entries[0] || null;
+    }
   } catch (e) {
-    if (isAuthError(e)) throw e;
+    if (isAuthError(e) || e.code === 'identity_mismatch') throw e;
+    balanceError = e;
     warnings.push(`余额查询不可用：${e.message || e}`);
   }
-  const balanceAvailable = !!bal && ['sumMoney', 'accountBalance', 'prepayBal', 'historyOwe'].some((key) => Number.isFinite(num(bal[key])));
+  const balanceAvailable = !!bal && (['sumMoney', 'accountBalance', 'prepayBal'].some((key) => Number.isFinite(num(bal[key]))) || num(bal.historyOwe) > 0);
   if (!balanceAvailable && (scope === 'balance' || (!dailyAvailable && !monthlyAvailable))) {
-    throw new Error(warnings.join('；') || '国网未返回该户号的余额。请核对户号与地区资料；未绑定户号能否查询取决于服务端，当前未接入 App 的「为其他户号交费」专用查询流程。');
+    if (balanceError) throw balanceError;
+    throw new SgError('empty_balance', '该地区和类型没有返回有效余额');
   }
   if (!balanceAvailable) warnings.push('该户号没有可用的余额数据');
   
@@ -542,7 +558,15 @@ async function queryAccount(app, a, { scope = 'full' } = {}) {
     eleBill.accountBalance = bal && Number.isFinite(num(bal.accountBalance)) ? num(bal.accountBalance) : 0;
   }
 
+  const metadataCode = (value) => /^\d+$/.test(clean(value)) ? clean(value) : '';
   return {
+    householdVerified,
+    // Learn metadata only when actually returned, without inventing organization codes.
+    resolvedAccount: bal ? { ...a,
+      org: metadataCode(bal.orgNo) || a.org,
+      orgName: clean(bal.orgName) || a.orgName,
+      elec: metadataCode(bal.elecType || bal.elecTypeCode || bal.sceneType) || a.elec
+    } : undefined,
     availability: { balance: balanceAvailable, daily: dailyAvailable, monthly: monthlyAvailable },
     warnings,
     userInfo: { consNo: a.consNo, consNo_dst: a.src, consName_dst: a.name, orgName: a.orgName, proNo: a.pro },

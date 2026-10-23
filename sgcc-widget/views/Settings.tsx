@@ -22,12 +22,15 @@ import type { DataResult } from '../api/client'
 import { normalize } from '../data'
 import {
   clearCache,
+  clearResolution,
   getPassword,
   loadPreference,
   savePreference,
   setPassword
 } from '../store'
 import type { Dimension, Preference, QueryMode, QueryScope } from '../store'
+import { sourceKey } from '../accounts'
+import { REGIONS, ELEC_TYPES } from '../regions'
 
 const MIN_BARS = 3
 const MAX_BARS = 14
@@ -75,6 +78,8 @@ export function Settings() {
   const [sending, setSending] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [result, setResult] = useState<DataResult | null>(null)
+  const [advanced, setAdvanced] = useState(false)
+  const [queryStatus, setQueryStatus] = useState('')
 
   useEffect(() => {
     savePreference(preference)
@@ -89,7 +94,9 @@ export function Settings() {
     if (['phone', 'queryMode', 'queryScope', 'consNo', 'provinceCode', 'orgNo', 'elecType']
       .some((key) => key in patch)) {
       clearCache()
+      clearResolution()
       setResult(null)
+      setQueryStatus('')
     }
     setPreference((prev) => ({ ...prev, ...patch }))
   }
@@ -120,11 +127,16 @@ export function Settings() {
 
   const onRefresh = async () => {
     setRefreshing(true)
+    setQueryStatus('准备查询…')
     try {
       savePreference(preference)
       setPassword(password)
-      const next = await getData({ force: true })
+      const key = sourceKey(preference)
+      const next = await getData({ force: true, discover: preference.queryMode === 'manual',
+        onProgress: (message) => { if (sourceKey(loadPreference()) === key) setQueryStatus(message) } })
+      if (sourceKey(loadPreference()) !== key) throw new Error('查询期间配置已改变，请按新配置重新查询')
       setResult(next)
+      setQueryStatus(next.queryInfo ?? '查询完成')
       const { list, error, warnings } = next
       const ok = list.filter(Boolean).length
       await Dialog.alert({
@@ -134,6 +146,7 @@ export function Settings() {
       Widget.reloadAll()
     } catch (e) {
       console.error(e)
+      setQueryStatus(errorMessage(e))
       await Dialog.alert({ title: '刷新失败', message: errorMessage(e) })
     } finally {
       setRefreshing(false)
@@ -165,11 +178,11 @@ export function Settings() {
       >
         <Section
           header={<Text>查询方式</Text>}
-          footer={<Text>手动模式使用你填写的户号，不要求它出现在手机号的绑定列表。仍需登录；未绑定户号直查为待验证功能，不等同于 App 的「为其他户号交费」。</Text>}
+          footer={<Text>手动模式输入户号并选择所在地区即可发起查询。类型可自动尝试，供电单位可留空。仍需登录，能否查到未绑定户号取决于当地接口。</Text>}
         >
           <Picker title="户号来源" value={preference.queryMode}
             onChanged={(value: string) => update({ queryMode: value as QueryMode })}>
-            <Text tag="manual">手动户号（待验证）</Text>
+            <Text tag="manual">手动户号</Text>
             <Text tag="bound">账号绑定户号</Text>
           </Picker>
           <Picker title="查询内容" value={preference.queryScope}
@@ -182,16 +195,36 @@ export function Settings() {
         {preference.queryMode === 'manual' ? (
           <Section
             header={<Text>手动户号</Text>}
-            footer={<Text>保留户号开头的 0。若未绑定，下面三项需来自实际查询资料：省份 proNo/provinceId、供电单位 orgNo、类型 elecType/constType。当前还不能自动补全，不能仅填户号查询。无需提供房东密码。</Text>}
+            footer={<Text>保留户号开头的 0。住宅适合一般租房；不确定就选自动。自动模式最多尝试五种类型，成功后保存可用组合，不改变官方 App 的绑定关系。</Text>}
           >
             <TextField title="用电户号" prompt="完整户号" value={preference.consNo}
               keyboardType="numberPad" onChanged={(consNo: string) => update({ consNo })} />
-            <TextField title="省份代码" prompt="原查询返回的省份代码" value={preference.provinceCode}
-              keyboardType="numberPad" onChanged={(provinceCode: string) => update({ provinceCode })} />
-            <TextField title="供电单位代码" prompt="orgNo" value={preference.orgNo}
+            <Picker title="所在地区" value={preference.provinceCode}
+              onChanged={(provinceCode: string) => update({ provinceCode })}>
+              <Text tag="">请选择地区</Text>
+              {REGIONS.map((region) => <Text key={region.code} tag={region.code}>{region.name}</Text>)}
+              {preference.provinceCode && !REGIONS.some((region) => region.code === preference.provinceCode)
+                ? <Text tag={preference.provinceCode}>{`自定义地区 ${preference.provinceCode}`}</Text> : null}
+            </Picker>
+            <Picker title="用电类型" value={preference.elecType}
+              onChanged={(elecType: string) => update({ elecType })}>
+              <Text tag="">自动尝试（推荐）</Text>
+              {ELEC_TYPES.map((type) => <Text key={type.code} tag={type.code}>{type.name}</Text>)}
+              {preference.elecType && !ELEC_TYPES.some((type) => type.code === preference.elecType)
+                ? <Text tag={preference.elecType}>{`自定义类型 ${preference.elecType}`}</Text> : null}
+            </Picker>
+            <Toggle title="高级设置（选填）" value={advanced} onChanged={setAdvanced} />
+          </Section>
+        ) : null}
+
+        {preference.queryMode === 'manual' && advanced ? (
+          <Section header={<Text>可选查询资料</Text>}
+            footer={<Text>不知道这些代码就留空。不会枚举供电单位，也不会自动切换地区。若服务端明确要求供电单位或户号授权，自动更换类型无法补齐。</Text>}>
+            <TextField title="供电单位代码（选填）" prompt="可留空" value={preference.orgNo}
               keyboardType="numberPad" onChanged={(orgNo: string) => update({ orgNo })} />
-            <TextField title="用电类型代码" prompt="elecType / constType" value={preference.elecType}
-              keyboardType="numberPad" onChanged={(elecType: string) => update({ elecType })} />
+            <TextField title="自定义地区代码（选填）" prompt="通常用上面的地区选择即可" value={preference.provinceCode}
+              keyboardType="numberPad" onChanged={(provinceCode: string) => update({ provinceCode })} />
+            <Button title="清除已保存的可用组合" action={() => { clearResolution(); clearCache(); setResult(null); setQueryStatus('已清除，下次点击查询时重新尝试'); Widget.reloadAll() }} />
           </Section>
         ) : null}
 
@@ -232,6 +265,7 @@ export function Settings() {
 
         {result ? (
           <Section header={<Text>查询结果</Text>}>
+            {result.queryInfo ? <Text>{result.queryInfo}</Text> : null}
             <Text>{`${result.error ? '缓存数据 · ' : ''}${new Date(result.fetchedAt).toLocaleString()}`}</Text>
             {result.list.map((item, index) => {
               if (!item) return <Text key={index}>{`第 ${index + 1} 户查询失败`}</Text>
@@ -247,11 +281,12 @@ export function Settings() {
         <Section header={<Text>数据</Text>}>
           <Button action={onRefresh} disabled={refreshing}>
             <HStack>
-              <Text>立即刷新</Text>
+              <Text>{preference.queryMode === 'manual' ? '自动识别并查询' : '立即刷新'}</Text>
               <Spacer />
               {refreshing ? <ProgressView /> : null}
             </HStack>
           </Button>
+          {queryStatus ? <Text foregroundStyle="secondaryLabel">{queryStatus}</Text> : null}
           <Button title="清除数据缓存" role="destructive" action={onClearCache} />
         </Section>
 

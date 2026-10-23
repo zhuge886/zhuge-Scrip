@@ -4,9 +4,12 @@
  */
 import type { Color } from 'scripting'
 import type { Dimension } from './store'
+import type { PowerAccount } from './accounts'
 
 /** Shape returned by `queryAccount` in `vendor/sgcc_protocol.ts`. */
 export type RawAccount = {
+  resolvedAccount?: PowerAccount
+  householdVerified?: boolean
   availability?: { balance: boolean; daily: boolean; monthly: boolean }
   warnings?: string[]
   userInfo?: {

@@ -1,6 +1,6 @@
 import type { Preference } from './store'
 
-/** Exact shape consumed by the existing App protocol. Never infer routing codes from a household number. */
+/** Shape consumed by the App protocol. Empty org/elec fields mean unspecified. */
 export type PowerAccount = {
   consNo: string
   src: string
@@ -20,7 +20,7 @@ export function normalizePhone(value: string): string {
 export function sourceKey(preference: Preference): string {
   const p = preference
   return JSON.stringify([
-    'sgcc-manual-v1', normalizePhone(p.phone), p.queryMode, p.queryScope,
+    'sgcc-manual-v2', normalizePhone(p.phone), p.queryMode, p.queryScope,
     ...(p.queryMode === 'manual'
       ? [p.consNo.trim(), p.provinceCode.trim(), p.orgNo.trim(), p.elecType.trim()]
       : [])
@@ -41,11 +41,9 @@ export function selectAccounts(preference: Preference, bound: PowerAccount[]): P
   const pro = preference.provinceCode.trim()
   const org = preference.orgNo.trim()
   const elec = preference.elecType.trim()
-  if (!pro || !org || !elec) {
-    throw new Error('未绑定户号还需填写省份、供电单位及用电类型代码；目前不能仅凭户号自动取得这些资料。请在「手动户号」中补全，不能用手机号或户号前几位代替。')
-  }
-  if (![pro, org, elec].every((value) => /^\d+$/.test(value))) {
-    throw new Error('省份、供电单位及用电类型代码应为原查询返回的数字代码')
+  if (!pro) throw new Error('请先选择户号所在地区')
+  if (![pro, org, elec].every((value) => value === '' || /^\d+$/.test(value))) {
+    throw new Error('高级设置中的代码应为数字；不知道供电单位代码时请留空')
   }
   return [{ consNo, src: consNo, pro, org, elec, name: '', orgName: '' }]
 }

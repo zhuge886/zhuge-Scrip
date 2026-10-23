@@ -5,9 +5,10 @@
  * Plain `Storage` (no `{ shared: true }`): index.tsx and widget.tsx belong to
  * this one script and share its private domain. The password lives in the
  * Keychain; the protocol's device seed and session token also go there, under
- * the same `sgcc.` prefix (see `api/client.ts`).
+ * the same `zhuge.sgcc.` prefix (see `api/client.ts`).
  */
 import type { RawAccount } from './data'
+import type { PowerAccount } from './accounts'
 
 export type Dimension = 'daily' | 'monthly'
 export type QueryMode = 'manual' | 'bound'
@@ -36,7 +37,10 @@ export type Cache = {
   /** Index-aligned with the account list; `null` marks an account whose query failed. */
   list: (RawAccount | null)[]
   warnings: string[]
+  queryInfo?: string
 }
+
+export type Resolution = { sourceKey: string; account: PowerAccount; savedAt: number }
 
 export const defaultPreference: Preference = {
   phone: '',
@@ -59,6 +63,7 @@ export const KEYCHAIN_PREFIX = 'zhuge.sgcc.'
 const KEY_PREFERENCE = 'preference'
 const KEY_DATA = 'data'
 const KEY_PASSWORD = `${KEYCHAIN_PREFIX}password`
+const KEY_RESOLUTION = 'resolved-account-v2'
 
 export function loadPreference(): Preference {
   const stored = Storage.get<Partial<Preference>>(KEY_PREFERENCE) ?? {}
@@ -78,7 +83,7 @@ export function getPassword(): string {
 }
 
 export function setPassword(password: string) {
-  if (password !== getPassword()) clearCache()
+  if (password !== getPassword()) { clearCache(); clearResolution() }
   if (password === '') {
     Keychain.remove(KEY_PASSWORD)
   } else {
@@ -96,5 +101,17 @@ export function saveCache(cache: Cache) {
 
 export function clearCache() {
   Storage.remove(KEY_DATA)
+}
+
+export function loadResolution(): Resolution | null {
+  return Storage.get<Resolution>(KEY_RESOLUTION) ?? null
+}
+
+export function saveResolution(resolution: Resolution) {
+  Storage.set(KEY_RESOLUTION, resolution)
+}
+
+export function clearResolution() {
+  Storage.remove(KEY_RESOLUTION)
 }
 
