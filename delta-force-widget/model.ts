@@ -5,8 +5,16 @@ export const WX_GAME_APP = "wx39308a0a1bd83d22"
 export const WX_PC_APP = "wxfa0c35392d06b82f"
 export const HAFU_ITEM = "17020000010"
 export const REFRESH_MS = 30 * 60 * 1000
+export const RENEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+export const WECHAT_RENEW_URL = "https://api.weixin.qq.com/sns/oauth2/refresh_token"
 
-export type Session = { openid: string; access_token: string; appid: string; acctype: "wx" | "mini" }
+export type Session = {
+  openid: string; access_token: string; appid: string; acctype: "wx" | "mini"
+  refresh_token?: string
+  expiresAt?: number
+  /** Fixed window from QR authorization; token refreshes must not extend it. */
+  refreshUntil?: number
+}
 export type Metric = {
   value: string | null
   updatedAt: number | null
@@ -114,7 +122,11 @@ export function validSession(raw: unknown): Session | null {
   const s = object(raw)
   const validToken = (v: unknown) => typeof v === "string" && /^[a-zA-Z0-9_\-.]{6,2048}$/.test(v)
   if (!["wx", "mini"].includes(String(s.acctype)) || !/^wx[a-fA-F0-9]{16}$/.test(String(s.appid)) || !validToken(s.openid) || !validToken(s.access_token)) return null
-  return { openid: s.openid as string, access_token: s.access_token as string, appid: s.appid as string, acctype: s.acctype as Session["acctype"] }
+  const session: Session = { openid: s.openid as string, access_token: s.access_token as string, appid: s.appid as string, acctype: s.acctype as Session["acctype"] }
+  if (validToken(s.refresh_token)) session.refresh_token = s.refresh_token as string
+  if (typeof s.expiresAt === "number" && Number.isFinite(s.expiresAt) && s.expiresAt > 0) session.expiresAt = s.expiresAt
+  if (typeof s.refreshUntil === "number" && Number.isFinite(s.refreshUntil) && s.refreshUntil > 0) session.refreshUntil = s.refreshUntil
+  return session
 }
 export function form(values: Record<string, string>): string {
   return Object.entries(values).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&")
@@ -123,7 +135,9 @@ export function balanceForm(): string {
   return form({ iChartId: "319386", iSubChartId: "319386", sIdeToken: "zMemOt", type: "3", item: HAFU_ITEM })
 }
 export function authForm(session: Session): string {
-  return form({ ...session, needGopenid: "1", isPreengage: "1", ams_targetappid: WX_GAME_APP })
+  // Refresh credentials go only to WeChat's refresh endpoint, never game queries.
+  return form({ openid: session.openid, access_token: session.access_token, appid: session.appid,
+    acctype: session.acctype, needGopenid: "1", isPreengage: "1", ams_targetappid: WX_GAME_APP })
 }
 export function profitForm(): string {
   return form({ iChartId: "316969", iSubChartId: "316969", sIdeToken: "NoOapI", method: "dfm/center.recent.detail", source: "7", param: JSON.stringify({ resourceType: "sol" }) })

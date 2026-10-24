@@ -1,15 +1,19 @@
 import type { Cookie } from "scripting"
-import { OFFICIAL_HOME, QueryError, Session, validSession, WX_PC_APP } from "./model"
+import { OFFICIAL_HOME, QueryError, RENEW_WINDOW_MS, Session, validSession, WX_PC_APP } from "./model"
 import { saveSession } from "./store"
 
 const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
-export function sessionFromCookies(cookies: Cookie[]): Session | null {
+export function sessionFromCookies(cookies: Cookie[], now = Date.now()): Session | null {
   const values: Record<string, string> = {}
+  let expiresAt: number | undefined
   for (const cookie of cookies) {
     if (!["df.qq.com", ".df.qq.com", "qq.com", ".qq.com"].includes(cookie.domain)) continue
-    if (["openid", "access_token", "appid", "acctype"].includes(cookie.name)) values[cookie.name] = cookie.value
+    if (["openid", "access_token", "appid", "acctype", "refresh_token"].includes(cookie.name)) values[cookie.name] = cookie.value
+    if (cookie.name === "access_token" && cookie.expiresDate instanceof Date) expiresAt = cookie.expiresDate.getTime()
   }
-  return validSession(values)
+  const session = validSession({ ...values, expiresAt })
+  if (session?.refresh_token) session.refreshUntil = now + RENEW_WINDOW_MS
+  return session
 }
 export async function loginByWeChatQR(): Promise<Session | null> {
   const web = new WebViewController({ ephemeral: true })

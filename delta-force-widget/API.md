@@ -1,6 +1,6 @@
 # 接口与日期口径
 
-核对日期：2026-10-23。保留用户已验证可用的微信扫码与日报请求，在 1.2.0 简化交互并调整展示口径。
+核对日期：2026-10-24。1.3.0 保留已验证的扫码与日报查询，补充微信 OAuth 续期及透明界面。
 
 ## 查询
 
@@ -34,3 +34,22 @@ recentGainDate 是收益日期；checkedAt 是本机请求时间；profit.update
 先前尝试过 [morluto/rea](https://github.com/morluto/rea) 6.7.0，分析 worker 启动失败；未将其作为成功分析的证据。本项目没有运行完整游戏客户端，也不能直接读取微信的小程序会话。
 
 这些是官网内部接口，没有面向本脚本的稳定开放 API 承诺。扫码和最近日报已由用户反馈可用；余额权限、日报更新时机由腾讯决定。
+
+## 自动续期
+
+腾讯 Milo 的扫码换码逻辑会把 refresh_token 与 access_token 一并写入 Cookie；1.2.0 仅提取四元组，遗漏了续期凭据。1.3.0 在 SDK 确认登录后同时提取 refresh_token 和访问 Cookie 的有效时间，存入原 Keychain 记录。
+
+续期调用微信的 HTTPS GET https://api.weixin.qq.com/sns/oauth2/refresh_token，参数为 appid、grant_type=refresh_token、refresh_token。请求格式核对 [wechat-oauth 实现](https://github.com/node-webot/wechat-oauth/blob/8cc3035da0dd4111ded27397d1cdac116e2b5656/lib/oauth.js)。它不需要应用 secret；未尝试取得或使用腾讯的应用 secret。
+
+- 接近访问过期时间先续期；未获得过期时间时，在日报鉴权失败后尝试一次，成功后重试查询。
+- 返回的 OpenID 必须与保存账号相同；保持 App ID、账户类型和原 30 天续期窗口。续期凭据轮换时更新 Keychain，不清除收益缓存。
+- 新会话只替换仍然匹配的当前登录。退出、换号或其他请求更新 token 后，旧续期结果不能覆盖新状态。
+- 游戏请求严格只使用原四元组，**不发送 refresh_token 或本机有效期字段**。
+- 续期错误不回显服务端原始文本；断网暂时失败保留缓存与登录，不断言已经过期。
+- 30 天是本地采用的固定续期尝试窗口，不是对微信端有效期的修改或实测保证。旧版缺失的 refresh_token 必须重新扫码获取。
+
+## 透明组件
+
+[公开 Scripting Widget 文档](https://github.com/Honye/scripting-scripts/blob/7c8d0045604c4a978e6d66a8ed820f7bd5150c28/documentation/widget_api/zh.md) 区分系统“透明背景小组件”与“用图片模拟透明背景”。isTransparentBackground 只表示图片模拟，不能代表所有透明模式。
+
+本项目不绘制任何背景，因而无需依赖模式判断来去掉底板。用户须在桌面添加透明类型；脚本不能用只读模式属性切换系统组件类型。

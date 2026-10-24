@@ -1,6 +1,7 @@
 import { fetch } from "scripting"
 import { AMS_URL, authForm, balanceForm, emptySnapshot, Metric, parseBalance, parseProfit, profitForm, QueryError, safeMessage, Session, Snapshot } from "./model"
 import { loadSession, loadSnapshot, saveSnapshot } from "./store"
+import { canRenew, renewSession } from "./renew"
 
 export async function ams(session: Session, body: string): Promise<unknown> {
   try {
@@ -26,14 +27,34 @@ function failedMetric(previous: Metric, error: unknown): Metric {
   return { ...previous, status: previous.value === null ? "error" : "cached", message: safeMessage(error) }
 }
 export async function refreshSnapshot(force = false, now = Date.now()): Promise<Snapshot> {
-  const session = loadSession()
+  let session = loadSession()
   if (!session) return emptySnapshot()
   const previous = loadSnapshot(session, now)
   if (!force && previous.checkedAt != null && now >= previous.checkedAt && now - previous.checkedAt < 5 * 60000) return previous
-  const [money, daily] = await Promise.allSettled([
-    ams(session, balanceForm()).then(parseBalance),
-    ams(session, profitForm()).then(parseProfit),
+  let attempted = false
+  let renewalError: unknown
+  const renew = async (): Promise<boolean> => {
+    attempted = true
+    try {
+      const next = await renewSession(session!, now)
+      if (!next) return false
+      session = next
+      return true
+    } catch (error) { renewalError = error; return false }
+  }
+  if (canRenew(session, now) && session.expiresAt != null && now >= session.expiresAt - 2 * 60000) await renew()
+  const query = () => Promise.allSettled([
+    ams(session!, balanceForm()).then(parseBalance),
+    ams(session!, profitForm()).then(parseProfit),
   ])
+  let [money, daily] = await query()
+  const authFailed = () => daily.status === "rejected" && daily.reason instanceof QueryError && daily.reason.code === "auth"
+  // Retry only once, and only for a failed income authorization. Balance alone
+  // may be unavailable even while the user's income authorization works.
+  if (authFailed() && !attempted && canRenew(session, now) && await renew()) [money, daily] = await query()
+  if (authFailed() && renewalError instanceof QueryError && renewalError.code !== "auth") {
+    daily = { status: "rejected", reason: renewalError }
+  }
   return storeQueryResults(session, previous, money, daily, now)
 }
 export function storeQueryResults(session: Session, previous: Snapshot,

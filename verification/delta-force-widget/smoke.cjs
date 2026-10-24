@@ -28,6 +28,7 @@ const model = require(path.join(root, 'model.ts'))
 const store = require(path.join(root, 'store.ts'))
 const api = require(path.join(root, 'api.ts'))
 const auth = require(path.join(root, 'auth.ts'))
+const renewal = require(path.join(root, 'renew.ts'))
 const ui = require(path.join(root, 'ui.tsx'))
 const now = Date.parse('2026-10-23T04:00:00Z')
 const session = { acctype: 'wx', appid: model.WX_PC_APP, openid: 'synthetic_openid_A', access_token: 'synthetic_token_A' }
@@ -48,7 +49,7 @@ function mockWeb(options = {}) {
       if (js.startsWith('return ')) return options.sdkFail ? 'failed' : options.cancel ? 'pending' : 'success'
       return true
     }
-    async getCookies(url) { assert.equal(url, model.OFFICIAL_HOME); return options.cancel && !options.earlyCookie ? [] : cookies() }
+    async getCookies(url) { assert.equal(url, model.OFFICIAL_HOME); return options.cancel && !options.earlyCookie ? [] : options.cookies ?? cookies() }
     present() { return options.cancel ? Promise.resolve() : new Promise(resolve => { this.resolve = resolve }) }
     dismiss() { this.resolve?.() }
     dispose() { this.disposed = true }
@@ -314,4 +315,186 @@ test('empty widgets never invent an income amount or report date', () => {
   assert.ok(labels.includes('暂无记录'))
   assert.ok(!labels.includes('总哈夫币'))
   assert.ok(!labels.includes('0'))
+})
+
+const renewable = (changes = {}) => ({ ...session, refresh_token: 'synthetic_refresh_A',
+  expiresAt: now - 1, refreshUntil: now + model.RENEW_WINDOW_MS, ...changes })
+const renewed = (changes = {}) => ({ access_token: 'synthetic_new_token_A', refresh_token: 'synthetic_new_refresh_A',
+  openid: session.openid, expires_in: 7200, ...changes })
+const isRenewal = url => url.startsWith(model.WECHAT_RENEW_URL + '?')
+
+test('QR captures the refresh credential and original access expiration in Keychain only', async () => {
+  const expiresAt = now + 7200000
+  const input = cookies(renewable()).filter(c => ['openid','access_token','appid','acctype','refresh_token'].includes(c.name))
+    .map(c => c.name === 'access_token' ? { ...c, expiresDate: new Date(expiresAt) } : c)
+  const parsed = auth.sessionFromCookies(input, now)
+  assert.equal(parsed.refresh_token, 'synthetic_refresh_A')
+  assert.equal(parsed.expiresAt, expiresAt)
+  assert.equal(parsed.refreshUntil, now + 30 * 86400000)
+  mockWeb({ cookies: input })
+  const saved = await auth.loginByWeChatQR()
+  assert.equal(store.loadSession().refresh_token, 'synthetic_refresh_A')
+  assert.ok(saved.refreshUntil > Date.now() + 29 * 86400000)
+  assert.ok(!JSON.stringify([...storage]).includes('synthetic_refresh_A'))
+})
+test('near-expiry login renews before querying and never sends refresh credentials to game APIs', async () => {
+  store.saveSession(renewable())
+  const calls = []
+  transport = async (url, init) => {
+    calls.push({ url, init })
+    if (isRenewal(url)) {
+      const params = new URL(url).searchParams
+      assert.equal(params.get('appid'), session.appid)
+      assert.equal(params.get('grant_type'), 'refresh_token')
+      assert.equal(params.get('refresh_token'), 'synthetic_refresh_A')
+      assert.equal(init.method, 'GET')
+      assert.equal(init.timeout, 10)
+      assert.equal(await init.handleRedirect(), null)
+      return response(renewed())
+    }
+    assert.equal(new URLSearchParams(init.body).get('access_token'), 'synthetic_new_token_A')
+    assert.ok(!init.body.includes('refresh_token'))
+    assert.ok(!init.headers.Cookie.includes('refresh'))
+    assert.ok(!init.body.includes('expiresAt'))
+    return success(url, init)
+  }
+  const result = await api.refreshSnapshot(true, now)
+  assert.equal(calls.length, 3)
+  assert.ok(isRenewal(calls[0].url))
+  assert.equal(result.profit.value, '5285832')
+  assert.equal(result.needsLogin, false)
+  assert.equal(store.loadSession().access_token, 'synthetic_new_token_A')
+  assert.equal(store.loadSession().refresh_token, 'synthetic_new_refresh_A')
+  assert.ok(!JSON.stringify([...storage]).includes('synthetic_new_refresh_A'))
+})
+test('income auth rejection triggers one automatic renewal and one retry', async () => {
+  store.saveSession(renewable({ expiresAt: undefined }))
+  let renewalCalls = 0, gameCalls = 0
+  transport = async (url, init) => {
+    if (isRenewal(url)) { renewalCalls++; return response(renewed()) }
+    gameCalls++
+    return new URLSearchParams(init.body).get('access_token') === session.access_token
+      ? response({ iRet: 101 }) : success(url, init)
+  }
+  const result = await api.refreshSnapshot(true, now)
+  assert.equal(renewalCalls, 1)
+  assert.equal(gameCalls, 4)
+  assert.equal(result.needsLogin, false)
+  assert.equal(result.profit.value, '5285832')
+})
+test('balance-only auth rejection does not trigger renewal', async () => {
+  store.saveSession(renewable({ expiresAt: undefined }))
+  let renewalCalls = 0
+  transport = async (url, init) => {
+    if (isRenewal(url)) { renewalCalls++; return response(renewed()) }
+    return init.body.includes('type=3') ? response({ iRet: 101 }) : success(url, init)
+  }
+  const result = await api.refreshSnapshot(true, now)
+  assert.equal(renewalCalls, 0)
+  assert.equal(result.needsLogin, false)
+})
+test('renewal cannot turn into a repeated auth retry loop', async () => {
+  store.saveSession(renewable())
+  let renewalCalls = 0, gameCalls = 0
+  transport = async (url) => {
+    if (isRenewal(url)) { renewalCalls++; return response(renewed()) }
+    gameCalls++; return response({ iRet: 101 })
+  }
+  const result = await api.refreshSnapshot(true, now)
+  assert.equal(renewalCalls, 1)
+  assert.equal(gameCalls, 2)
+  assert.equal(result.needsLogin, true)
+})
+test('temporary renewal failure preserves the last income without declaring login expired', async () => {
+  await seed()
+  store.replaceSession(session, renewable())
+  transport = async (url) => {
+    if (isRenewal(url)) throw Error('temporary network issue')
+    return response({ iRet: 101 })
+  }
+  const result = await api.refreshSnapshot(true, now)
+  assert.equal(result.needsLogin, false)
+  assert.equal(result.day, '2026-10-21')
+  assert.equal(result.profit.value, '5285832')
+  assert.equal(result.profit.status, 'cached')
+  assert.equal(store.loadSession().access_token, session.access_token)
+})
+test('30-day renewal window is fixed and is not extended by token rotation', async () => {
+  const original = renewable()
+  assert.equal(renewal.canRenew(original, now + 29 * 86400000), true)
+  assert.equal(renewal.canRenew(original, now + 31 * 86400000), false)
+  const next = renewal.parseRenewal(renewed(), original, now + 29 * 86400000)
+  assert.equal(next.refreshUntil, original.refreshUntil)
+  assert.equal(next.expiresAt, now + 29 * 86400000 + 7200000)
+  assert.equal(renewal.canRenew({ ...original, acctype: 'mini' }, now), false)
+})
+test('an expired refresh credential neither deletes saved data nor invents a longer login', async () => {
+  await seed()
+  store.replaceSession(session, renewable())
+  transport = async url => isRenewal(url)
+    ? response({ errcode: 42002, errmsg: 'expired ' + session.access_token }) : response({ iRet: 101 })
+  const result = await api.refreshSnapshot(true, now)
+  assert.equal(result.needsLogin, true)
+  assert.equal(result.profit.value, '5285832')
+  assert.equal(store.loadSession().access_token, session.access_token)
+  assert.ok(!result.profit.message.includes(session.access_token))
+})
+test('renewal rejects another identity, malformed tokens and unsafe responses', () => {
+  const before = renewable()
+  for (const payload of [renewed({ openid: another.openid }), renewed({ appid: 'wx1111111111111111' }),
+    renewed({ access_token: 'bad; cookie' }), renewed({ refresh_token: 'bad; cookie' }), renewed({ expires_in: -1 }), {}]) {
+    assert.throws(() => renewal.parseRenewal(payload, before, now))
+  }
+  assert.throws(() => renewal.parseRenewal({ errcode: -1, errmsg: session.access_token }, before, now), e => !e.message.includes(session.access_token))
+})
+test('renewal preserves account cache and cannot overwrite a newer token', async () => {
+  const cached = await seed()
+  const old = renewable()
+  store.replaceSession(session, old)
+  const newer = { ...old, access_token: 'synthetic_concurrent_token' }
+  store.replaceSession(old, newer)
+  const refused = store.replaceSession(old, { ...old, access_token: 'synthetic_stale_token' })
+  assert.equal(refused.access_token, newer.access_token)
+  assert.equal(store.loadSnapshot(newer, now).profit.value, cached.profit.value)
+})
+test('concurrent renewal requests share one network request', async () => {
+  const before = renewable()
+  store.saveSession(before)
+  let complete, calls = 0
+  transport = () => { calls++; return new Promise(resolve => { complete = resolve }) }
+  const a = renewal.renewSession(before, now), b = renewal.renewSession(before, now)
+  complete(response(renewed()))
+  const [first, second] = await Promise.all([a,b])
+  assert.equal(calls, 1)
+  assert.deepEqual(first, second)
+})
+test('logout or account switch during renewal cannot restore old credentials', async () => {
+  for (const change of [() => store.logout(), () => store.saveSession(another)]) {
+    const before = renewable()
+    store.saveSession(before)
+    let complete
+    transport = () => new Promise(resolve => { complete = resolve })
+    const pending = renewal.renewSession(before, now)
+    change()
+    complete(response(renewed()))
+    assert.equal(await pending, null)
+    assert.notEqual(store.loadSession()?.access_token, 'synthetic_new_token_A')
+  }
+})
+test('widget content has no background, icons, update footer or login banner', async () => {
+  const snapshot = await seed()
+  const visit = node => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(visit); return }
+    assert.equal(node.props.background, undefined)
+    assert.equal(node.props.widgetBackground, undefined)
+    assert.notEqual(node.type, 'Image')
+    visit(node.props.children)
+  }
+  for (const small of [true,false]) {
+    const card = ui.WalletCard({ snapshot: { ...snapshot, needsLogin: true }, small })
+    visit(card)
+    assert.ok(!texts(card).join(' ').match(/登录|更新于|上次同步|扫码|最近一份/))
+    assert.ok(texts(card).includes('+5,285,832'))
+  }
 })

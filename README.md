@@ -9,7 +9,7 @@
 | 功能 | 版本 | 用途 | 远程导入 | 使用说明 |
 | --- | --- | --- | --- | --- |
 | 电量监控 | 1.1.1 | 中文电量界面、简洁桌面圆环与百分比、标准蓝牙配件按需读取 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget) | [查看说明](battery-widget/README.md) |
-| 三角洲收益 | 1.2.0 | 微信扫码、最近日报收益与日期、余额可用时展示、简洁桌面组件 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
+| 三角洲收益 | 1.3.0 | 微信扫码与自动续期、透明文字组件、最近日报收益与日期 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
 | 网上国网·手动户号 | 1.2.0 | 地区/类型选择、五次以内自动尝试、供电单位选填、成功组合复用；真实查询待验证 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
 
 ## 远程导入链接（点击代码块右上角即可复制）
@@ -39,7 +39,7 @@ https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget
 https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget
 ```
 
-在 **Scripting → 导入远程脚本** 中粘贴，确认名称 **三角洲收益**、版本 **1.2.0**。显示最近一份游戏日报的收益与实际日期，休息日保留最近记录；余额获取不到时隐藏。仅保留微信扫码、刷新和退出，重新设计小号 / 中号组件。升级沿用原登录并迁移旧缓存。已通过类型检查和 24 项模拟测试，新版布局仍需 iPhone 验收。
+在 **Scripting → 导入远程脚本** 中粘贴，确认名称 **三角洲收益**、版本 **1.3.0**。移除桌面组件底板和状态尾注，只显示收益、日期与可用余额。添加 Scripting 的“透明背景小组件”并选择本项目。更新后重新扫码一次启用自动续期，在微信授权窗口内减少登录；不能保证整月免扫码。已通过类型检查及 37 项模拟测试，真实续期与透明布局仍需 iPhone 验证。
 
 [使用说明](delta-force-widget/README.md) · [接口分析](delta-force-widget/API.md) · [验证记录](delta-force-widget/VERIFICATION.md)
 
@@ -90,5 +90,4 @@ zhuge-Scrip/
 4. 需要安装器或开发检查时，分别放入 `installers/<功能目录名>.tsx` 和 `verification/<功能目录名>/`。
 
 正式导入链接统一使用 `main` 分支下的功能目录，避免把整个多功能仓库作为单个脚本导入。
-
 

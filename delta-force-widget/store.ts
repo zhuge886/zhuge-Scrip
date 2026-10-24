@@ -16,6 +16,19 @@ export function saveSession(session: Session): void {
   Storage.remove(CACHE_KEY)
   Keychain.remove(OWNER_KEY)
 }
+/** Rotate only the active account's token, keeping its dated income cache. */
+export function replaceSession(expected: Session, next: Session): Session | null {
+  const current = loadSession()
+  if (!current || current.appid !== expected.appid || current.openid !== expected.openid || current.acctype !== expected.acctype) return null
+  if (current.access_token !== expected.access_token || current.refresh_token !== expected.refresh_token) return current
+  if (!validSession(next) || next.appid !== current.appid || next.openid !== current.openid || next.acctype !== current.acctype) {
+    throw new QueryError("auth", "续期账号不匹配，请重新扫码")
+  }
+  if (!Keychain.set(SESSION_KEY, JSON.stringify(next), { accessibility: "first_unlock_this_device", synchronizable: false })) {
+    throw new QueryError("storage", "暂时无法保存登录续期，请稍后刷新")
+  }
+  return next
+}
 export function logout(): void {
   if (Keychain.contains(SESSION_KEY) && !Keychain.remove(SESSION_KEY)) throw new QueryError("storage", "无法退出，请检查钥匙串权限")
   Keychain.remove(OWNER_KEY)
