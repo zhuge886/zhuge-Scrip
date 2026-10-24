@@ -9,7 +9,7 @@
 | 功能 | 版本 | 用途 | 远程导入 | 使用说明 |
 | --- | --- | --- | --- | --- |
 | 电量监控 | 1.1.1 | 中文电量界面、简洁桌面圆环与百分比、标准蓝牙配件按需读取 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget) | [查看说明](battery-widget/README.md) |
-| 三角洲收益 | 1.3.0 | 微信扫码与自动续期、透明文字组件、最近日报收益与日期 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
+| 三角洲收益 | 1.3.1 | 白底反差色 / 透明组件、最近日报收益与日期、微信自动续期 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
 | 网上国网·手动户号 | 1.2.0 | 地区/类型选择、五次以内自动尝试、供电单位选填、成功组合复用；真实查询待验证 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
 
 ## 远程导入链接（点击代码块右上角即可复制）
@@ -39,7 +39,7 @@ https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget
 https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget
 ```
 
-在 **Scripting → 导入远程脚本** 中粘贴，确认名称 **三角洲收益**、版本 **1.3.0**。移除桌面组件底板和状态尾注，只显示收益、日期与可用余额。添加 Scripting 的“透明背景小组件”并选择本项目。更新后重新扫码一次启用自动续期，在微信授权窗口内减少登录；不能保证整月免扫码。已通过类型检查及 37 项模拟测试，真实续期与透明布局仍需 iPhone 验证。
+在 **Scripting → 导入远程脚本** 中粘贴，确认名称 **三角洲收益**、版本 **1.3.1**。修复白字白底：普通组件为白底深色文案、绿赚红亏；透明组件省略底板并适配文字颜色。1.3.0 已启用续期的账号无需再扫码。已通过类型检查与 40 项模拟测试，原生外观和真实续期仍需 iPhone 验证。
 
 [使用说明](delta-force-widget/README.md) · [接口分析](delta-force-widget/API.md) · [验证记录](delta-force-widget/VERIFICATION.md)
 

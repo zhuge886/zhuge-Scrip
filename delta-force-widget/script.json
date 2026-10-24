@@ -1,9 +1,9 @@
 {
   "name": "三角洲收益",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "icon": "chart.line.uptrend.xyaxis",
   "color": "green",
-  "description": "微信扫码与自动续期，透明文字组件展示最近日报收益和日期，余额可用时展示。",
+  "description": "最近日报收益与日期，白底反差色与透明模式自动适配，微信扫码及自动续期。",
   "localizedNames": {
     "zh": "三角洲收益"
   },

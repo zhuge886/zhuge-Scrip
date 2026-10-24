@@ -54,7 +54,7 @@ function Dashboard() {
         <Text font={30} fontWeight="bold" foregroundStyle={palette.ink}>你的烽火账本</Text>
         <Text font={13} foregroundStyle={palette.muted}>最近一份日报，随时看见。</Text>
       </VStack>
-      <VStack frame={{ maxWidth: "infinity", height: 224 }} clipShape={{ type: "rect", cornerRadius: 26 }}>
+      <VStack frame={{ maxWidth: "infinity", height: 224 }} background="#FFFFFF" clipShape={{ type: "rect", cornerRadius: 26 }}>
         <WalletCard snapshot={snapshot} />
       </VStack>
       <VStack alignment="leading" spacing={14} frame={{ maxWidth: "infinity", alignment: "leading" }}>
@@ -87,7 +87,7 @@ function Dashboard() {
           <Image systemName="square.grid.2x2" font={13} foregroundStyle={palette.mint} />
           <Text font={14} fontWeight="semibold" foregroundStyle={palette.ink}>把收益放在桌面</Text>
         </HStack>
-        <Text font={12} foregroundStyle={palette.muted}>长按桌面 → 添加 Scripting 的“透明背景小组件” → 选择“三角洲收益”。支持小号与中号，点按即可打开。</Text>
+        <Text font={12} foregroundStyle={palette.muted}>普通 Scripting 小组件显示白底与反差色收益；选择“透明背景小组件”可透出壁纸。两种都选择“三角洲收益”，支持小号与中号。</Text>
         <Text font={11} foregroundStyle={palette.muted}>金额旁是实际收益日期。休息日保留最近一份日报；余额可用时自动显示。桌面刷新由 iOS 调度。</Text>
       </VStack>
       <Text font={10} foregroundStyle={palette.muted}>仅查询本人账号 · 登录保存在本机钥匙串</Text>

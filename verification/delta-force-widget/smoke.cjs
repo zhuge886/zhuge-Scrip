@@ -481,7 +481,7 @@ test('logout or account switch during renewal cannot restore old credentials', a
     assert.notEqual(store.loadSession()?.access_token, 'synthetic_new_token_A')
   }
 })
-test('widget content has no background, icons, update footer or login banner', async () => {
+test('transparent widget content has no background, icons, update footer or login banner', async () => {
   const snapshot = await seed()
   const visit = node => {
     if (!node || typeof node !== 'object') return
@@ -492,9 +492,63 @@ test('widget content has no background, icons, update footer or login banner', a
     visit(node.props.children)
   }
   for (const small of [true,false]) {
-    const card = ui.WalletCard({ snapshot: { ...snapshot, needsLogin: true }, small })
+    const card = ui.WalletCard({ snapshot: { ...snapshot, needsLogin: true }, small, transparent: true })
     visit(card)
     assert.ok(!texts(card).join(' ').match(/登录|更新于|上次同步|扫码|最近一份/))
     assert.ok(texts(card).includes('+5,285,832'))
+  }
+})
+
+function textNodes(node) {
+  if (!node || typeof node !== 'object') return []
+  if (Array.isArray(node)) return node.flatMap(textNodes)
+  return [...(node.type === 'Text' ? [node] : []), ...textNodes(node.props.children)]
+}
+function contrast(first, second) {
+  const luminance = hex => {
+    const rgb = hex.slice(1).match(/../g).map(v => parseInt(v,16)/255).map(v => v <= 0.04045 ? v/12.92 : ((v+0.055)/1.055)**2.4)
+    return 0.2126*rgb[0]+0.7152*rgb[1]+0.0722*rgb[2]
+  }
+  const a = luminance(first), b = luminance(second)
+  return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)
+}
+test('ordinary widgets remain readable on white for positive, negative, zero and missing income', async () => {
+  const original = await seed()
+  for (const small of [true,false]) for (const value of ['5285832','-1814421','0',null]) {
+    const card = ui.WalletCard({snapshot:{...original,profit:{...original.profit,value}},small})
+    assert.equal(card.props.widgetBackground,'#FFFFFF')
+    const nodes = textNodes(card)
+    assert.ok(nodes.some(n => texts(n).includes('最近收益')))
+    assert.ok(nodes.some(n => texts(n).includes(value === null ? '待同步' : model.formatAmount(value,true))))
+    for (const node of nodes) {
+      assert.equal(typeof node.props.foregroundStyle,'string')
+      assert.ok(contrast(node.props.foregroundStyle,'#FFFFFF') >= 4.5, texts(node).join(' '))
+    }
+    if (value && value !== '0') {
+      const amount = nodes.find(n => texts(n).includes(model.formatAmount(value,true)))
+      const label = nodes.find(n => texts(n).includes('最近收益'))
+      assert.notEqual(amount.props.foregroundStyle,label.props.foregroundStyle)
+    }
+  }
+})
+test('native transparent, native blur and wallpaper-image modes all suppress the white fill', async () => {
+  const snapshot = await seed()
+  for (const flags of [{isTransparentMode:true},{isBlurMode:true},{isTransparentBackground:true}]) {
+    assert.equal(ui.usesTransparentBackground(flags),true)
+    assert.equal(ui.WalletCard({snapshot,transparent:ui.usesTransparentBackground(flags)}).props.widgetBackground,undefined)
+  }
+  for (const flags of [undefined,null,{}, {isTransparentMode:false,isBlurMode:false,isTransparentBackground:false}]) {
+    assert.equal(ui.usesTransparentBackground(flags),false)
+  }
+})
+test('transparent text and income adapt to both light and dark appearance', async () => {
+  const original = await seed()
+  for (const value of ['5285832','-1814421','0']) {
+    const card = ui.WalletCard({snapshot:{...original,profit:{...original.profit,value}},transparent:true})
+    for (const node of textNodes(card)) {
+      const style = node.props.foregroundStyle
+      assert.ok(contrast(style.light,'#FFFFFF') >= 4.5)
+      assert.ok(contrast(style.dark,'#101A14') >= 4.5)
+    }
   }
 })

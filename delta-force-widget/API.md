@@ -52,4 +52,6 @@ recentGainDate 是收益日期；checkedAt 是本机请求时间；profit.update
 
 [公开 Scripting Widget 文档](https://github.com/Honye/scripting-scripts/blob/7c8d0045604c4a978e6d66a8ed820f7bd5150c28/documentation/widget_api/zh.md) 区分系统“透明背景小组件”与“用图片模拟透明背景”。isTransparentBackground 只表示图片模拟，不能代表所有透明模式。
 
-本项目不绘制任何背景，因而无需依赖模式判断来去掉底板。用户须在桌面添加透明类型；脚本不能用只读模式属性切换系统组件类型。
+1.3.1 读取 isTransparentMode / isBlurMode / isTransparentBackground，任一为 true 时省略白色 widgetBackground。普通模式设置白色 widgetBackground，并使用固定深色文案、深绿正收益和深红负收益，修复 1.3.0 固定白字导致普通白底组件看似空白的问题。旧宿主缺少新模式字段时安全回退到白底高对比样式。
+
+透明模式使用 DynamicShapeStyle 适配浅色 / 深色文字和收益颜色；不使用 hooks，适合组件入口。脚本不能用只读模式属性切换系统组件类型。
