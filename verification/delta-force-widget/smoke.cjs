@@ -518,14 +518,14 @@ function contrast(first, second) {
   const a = luminance(first), b = luminance(second)
   return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)
 }
-test('ordinary widgets remain readable across the blue gradient for positive, negative, zero and missing income', async () => {
+test('ordinary widgets remain readable on the neutral stock card for positive, negative, zero and missing income', async () => {
   const original = await seed()
   for (const small of [true,false]) for (const value of ['5285832','-1814421','0',null]) {
     const card = widgetUI.WidgetCard({snapshot:{...original,profit:{...original.profit,value}},small})
-    assert.equal(card.props.background,'#A6D9FF')
+    assert.equal(card.props.background,'#F8FAFC')
     const backgrounds = nodesOfType(card,'Rectangle')[0].props.fill.colors
     assert.ok(backgrounds.length>=2)
-    assert.ok(backgrounds.every(color=>parseInt(color.slice(5,7),16)>parseInt(color.slice(1,3),16)))
+    assert.ok(backgrounds.every(color=>[1,3,5].every(index=>parseInt(color.slice(index,index+2),16)>=240)))
     const nodes = textNodes(card)
     assert.ok(nodes.some(n => texts(n).includes('最近收益')))
     assert.ok(nodes.some(n => texts(n).includes(value === null ? '待同步' : model.formatAmount(value,true))))
@@ -537,10 +537,13 @@ test('ordinary widgets remain readable across the blue gradient for positive, ne
       const amount = nodes.find(n => texts(n).includes(model.formatAmount(value,true)))
       const label = nodes.find(n => texts(n).includes('最近收益'))
       assert.notEqual(amount.props.foregroundStyle,label.props.foregroundStyle)
+      const color=amount.props.foregroundStyle
+      const red=parseInt(color.slice(1,3),16),green=parseInt(color.slice(3,5),16)
+      assert.ok(value.startsWith('-') ? green>red : red>green)
     }
   }
 })
-test('blue is the default and transparency requires an explicit parameter', async () => {
+test('the stock card is the default and transparency requires an explicit parameter', async () => {
   const snapshot = await seed()
   for (const parameter of [undefined,null,'','blue','{}','{"background":"blue"}',{isTransparentMode:true}]) {
     assert.equal(widgetUI.transparentParameter(parameter),false)
@@ -700,7 +703,7 @@ test('rescanning the same account preserves its seven-day history', async () => 
   assert.equal(restored.profit.value,'5285832')
 })
 
-test('a real widget entry paints blue content even when old transparent flags are enabled',{timeout:2000},async()=>{
+test('a real widget entry paints its own stock card even when old transparent flags are enabled',{timeout:2000},async()=>{
   await seed()
   nativeWidget.isTransparentMode=true
   nativeWidget.isTransparentBackground=true
@@ -712,27 +715,27 @@ test('a real widget entry paints blue content even when old transparent flags ar
   assert.equal(card.type,'ZStack')
   assert.equal(card.props.frame.width,158)
   assert.equal(card.props.frame.height,158)
-  assert.equal(card.props.background,'#A6D9FF')
+  assert.equal(card.props.background,'#F8FAFC')
   assert.equal(nodesOfType(card,'Rectangle').length,1)
   assert.ok(texts(card).includes('7日收益'))
   assert.ok(!texts(card).includes('近7天'))
 })
-test('the blue shape remains present when host background modifiers are stripped',async()=>{
+test('the card shape remains present when host background modifiers are stripped',async()=>{
   const snapshot=await seed()
   const card=widgetUI.WidgetCard({snapshot,now})
   delete card.props.background
   delete card.props.widgetBackground
   const shape=nodesOfType(card,'Rectangle')[0]
   assert.ok(shape.props.ignoresSafeArea)
-  assert.deepEqual(shape.props.fill.colors,['#8CCBFA','#C5E8FF'])
+  assert.deepEqual(shape.props.fill.colors,['#FFFFFF','#F4F6FA'])
 })
-test('the app preview uses native Widget.preview with an explicit blue parameter',async()=>{
+test('the app preview uses native Widget.preview with an explicit stock parameter',async()=>{
   const calls=[]
   nativeWidget.reloadAll=()=>calls.push('reload')
   nativeWidget.preview=async options=>calls.push(options)
-  await widgetUI.previewBlueWidget()
+  await widgetUI.previewWidget()
   assert.equal(calls[0],'reload')
   assert.equal(calls[1].family,'systemSmall')
   const config=calls[1].parameters
-  assert.equal(JSON.parse(config.options[config.default]).background,'blue')
+  assert.equal(JSON.parse(config.options[config.default]).background,'stock')
 })

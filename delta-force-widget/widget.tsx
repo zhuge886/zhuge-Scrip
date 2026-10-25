@@ -11,10 +11,11 @@ async function run() {
     if (session) snapshot = loadSnapshot(session)
     snapshot = await refreshSnapshot()
   } catch { /* Keep the last available report when a refresh or cache write fails. */ }
-  Widget.present(WidgetCard({
+  const card = WidgetCard({
     snapshot, small: Widget.family === "systemSmall", url: Script.createRunURLScheme(Script.name),
     size: Widget.displaySize,
-    transparent: transparentParameter(Widget.parameter),
-  }), { policy: "after", date: new Date(Date.now() + REFRESH_MS) })
+    transparent: transparentParameter(Widget.parameter ?? ""),
+  })
+  Widget.present(card, { policy: "after", date: new Date(Date.now() + REFRESH_MS) })
 }
 run()

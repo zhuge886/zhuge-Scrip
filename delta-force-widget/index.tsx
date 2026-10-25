@@ -4,7 +4,7 @@ import { refreshSnapshot } from "./api"
 import { loginByWeChatQR } from "./auth"
 import { loadSession, loadSnapshot, logout } from "./store"
 import { IncomeSummary, palette, TrendPanel } from "./ui"
-import { previewBlueWidget, WIDGET_RELEASE } from "./widget-view"
+import { previewWidget, WIDGET_RELEASE } from "./widget-view"
 
 function initialSnapshot(): Snapshot {
   try { const session = loadSession(); return session ? loadSnapshot(session) : emptySnapshot() }
@@ -82,7 +82,7 @@ function Dashboard() {
           {message ? <Text font={11} foregroundStyle={palette.muted}>{message}</Text> : null}
           {signedIn && !hasRenewal() ? <Text font={11} foregroundStyle={palette.muted}>重新扫码一次，启用自动续期。</Text> : null}
         </VStack>
-        <Button action={() => run(previewBlueWidget)} buttonStyle="plain" disabled={busy} frame={{ maxWidth: "infinity" }}>
+        <Button action={() => run(previewWidget)} buttonStyle="plain" disabled={busy} frame={{ maxWidth: "infinity" }}>
           <HStack spacing={12} padding={15} frame={{ maxWidth: "infinity" }} background={palette.panel} clipShape={{ type: "rect", cornerRadius: 17 }}>
             <Image systemName="square.grid.2x2" font={16} foregroundStyle={palette.accent} />
             <VStack alignment="leading" spacing={4}>
@@ -94,7 +94,7 @@ function Dashboard() {
           </HStack>
         </Button>
         <Button title="添加与更新说明" font={11} foregroundStyle={palette.accent} action={() => Dialog.alert({
-          title: "桌面组件", message: "更新时覆盖原项目，再运行“刷新收益”。\n\n若桌面仍是白底“近7天”，长按小组件 → 编辑小组件 → 重新选择本次更新的“三角洲收益”；必要时移除旧组件再添加。可先点“预览桌面组件”核对原生样式。\n\n默认直接绘制蓝底。需要透明时，在小组件参数中填 transparent。收益不足2天时收起图表，不生成假折线。",
+          title: "桌面组件", message: "更新时覆盖原项目，再运行“刷新收益”。\n\n若桌面仍是白底“近7天”，长按小组件 → 编辑小组件 → 重新选择本次更新的“三角洲收益”；必要时移除旧组件再添加。可先点“预览桌面组件”核对原生样式。\n\n默认使用浅灰白卡片，盈利红、亏损绿。需要透明时，在小组件参数中填 transparent。收益不足2天时收起图表，不生成假折线。",
         })} />
         <HStack>
           <Text font={9} foregroundStyle={palette.muted}>本人账号 · 数据保存在本机</Text>
