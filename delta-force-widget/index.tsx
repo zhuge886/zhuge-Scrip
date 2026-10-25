@@ -52,7 +52,7 @@ function Dashboard() {
     <VStack alignment="leading" spacing={24} padding={{ horizontal: 20, top: 22, bottom: 28 }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
       <VStack alignment="leading" spacing={6}>
         <Text font={30} fontWeight="bold" foregroundStyle={palette.ink}>你的烽火账本</Text>
-        <Text font={13} foregroundStyle={palette.muted}>最近一份日报，随时看见。</Text>
+        <Text font={13} foregroundStyle={palette.muted}>近7天收益走势，最近一份日报。</Text>
       </VStack>
       <VStack frame={{ maxWidth: "infinity", height: 224 }} background="#FFFFFF" clipShape={{ type: "rect", cornerRadius: 26 }}>
         <WalletCard snapshot={snapshot} />
@@ -89,6 +89,7 @@ function Dashboard() {
         </HStack>
         <Text font={12} foregroundStyle={palette.muted}>普通 Scripting 小组件显示白底与反差色收益；选择“透明背景小组件”可透出壁纸。两种都选择“三角洲收益”，支持小号与中号。</Text>
         <Text font={11} foregroundStyle={palette.muted}>金额旁是实际收益日期。休息日保留最近一份日报；余额可用时自动显示。桌面刷新由 iOS 调度。</Text>
+        <Text font={11} foregroundStyle={palette.muted}>每次查询按日报日期保存近7天记录，同一天更新覆盖。折线不标数字；只有一天记录时显示一个点，缺失日期不补零。</Text>
       </VStack>
       <Text font={10} foregroundStyle={palette.muted}>仅查询本人账号 · 登录保存在本机钥匙串</Text>
       {signedIn ? <Button title="退出并清除本机数据" role="destructive" action={() => run(async () => {

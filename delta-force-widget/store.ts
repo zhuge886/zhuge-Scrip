@@ -1,4 +1,5 @@
 import { amount, emptySnapshot, Metric, normalizeDay, object, QueryError, Session, Snapshot, validSession } from "./model"
+import { mergeHistory } from "./history"
 
 const SESSION_KEY = "zhuge886.delta-force.session.v1"
 const CACHE_KEY = "delta-force.snapshot.v1"
@@ -10,11 +11,14 @@ export function loadSession(): Session | null {
 }
 export function saveSession(session: Session): void {
   if (!validSession(session)) throw new QueryError("storage", "登录凭据无效，未保存")
+  const previous = loadSession()
   if (!Keychain.set(SESSION_KEY, JSON.stringify(session), { accessibility: "first_unlock_this_device", synchronizable: false })) {
     throw new QueryError("storage", "无法保存登录，请检查钥匙串权限")
   }
-  Storage.remove(CACHE_KEY)
-  Keychain.remove(OWNER_KEY)
+  if (!previous || previous.appid !== session.appid || previous.openid !== session.openid || previous.acctype !== session.acctype) {
+    Storage.remove(CACHE_KEY)
+    Keychain.remove(OWNER_KEY)
+  }
 }
 /** Rotate only the active account's token, keeping its dated income cache. */
 export function replaceSession(expected: Session, next: Session): Session | null {
@@ -49,7 +53,7 @@ export function loadSnapshot(session: Session, now = Date.now()): Snapshot {
   base.profit.message = "点击刷新，查看最近游戏收益"
   if (Keychain.get(OWNER_KEY) !== `${session.appid}:${session.openid}`) return base
   const raw = object(Storage.get<unknown>(CACHE_KEY))
-  if (![1, 2].includes(Number(raw.version)) || !validMetric(raw.balance) || !validMetric(raw.profit)) return base
+  if (![1, 2, 3].includes(Number(raw.version)) || !validMetric(raw.balance) || !validMetric(raw.profit)) return base
   let day = normalizeDay(raw.day)
   let profit: Metric = { ...raw.profit }
   // Upgrade the 1.1 cache: older reports were stored in its locally generated message.
@@ -64,9 +68,10 @@ export function loadSnapshot(session: Session, now = Date.now()): Snapshot {
     (metric.updatedAt === null || now < metric.updatedAt || now - metric.updatedAt >= 5 * 60000)
       ? { ...metric, status: "cached" } : { ...metric }
   return {
-    version: 2, day,
+    version: 3, day,
     checkedAt: typeof raw.checkedAt === "number" && Number.isFinite(raw.checkedAt) ? raw.checkedAt : null,
     profit: cached(profit), balance: cached(raw.balance),
+    history: mergeHistory(raw.history, day && profit.value !== null ? { day, value: profit.value } : null, now),
     needsLogin: raw.needsLogin === true,
   }
 }

@@ -8,7 +8,7 @@ const ts = require('typescript')
 const root = path.resolve(__dirname, '../../delta-force-widget')
 let transport, storage, keychain, views
 const original = Module._load
-const elements = Object.fromEntries(['VStack', 'HStack', 'Text', 'Spacer', 'Image'].map(name => [name, name]))
+const elements = Object.fromEntries(['VStack', 'HStack', 'Text', 'Spacer', 'Image', 'Chart', 'LineChart'].map(name => [name, name]))
 Module._load = function(name, ...args) {
   if (name === 'scripting') return { ...elements, fetch: (...args) => transport(...args) }
   return original.call(this, name, ...args)
@@ -30,6 +30,7 @@ const api = require(path.join(root, 'api.ts'))
 const auth = require(path.join(root, 'auth.ts'))
 const renewal = require(path.join(root, 'renew.ts'))
 const ui = require(path.join(root, 'ui.tsx'))
+const history = require(path.join(root, 'history.ts'))
 const now = Date.parse('2026-10-23T04:00:00Z')
 const session = { acctype: 'wx', appid: model.WX_PC_APP, openid: 'synthetic_openid_A', access_token: 'synthetic_token_A' }
 const another = { ...session, openid: 'synthetic_openid_B', access_token: 'synthetic_token_B' }
@@ -551,4 +552,133 @@ test('transparent text and income adapt to both light and dark appearance', asyn
       assert.ok(contrast(style.dark,'#101A14') >= 4.5)
     }
   }
+})
+
+test('history keeps only the current seven Beijing calendar days, not seven arbitrary records', () => {
+  const at = Date.parse('2026-10-25T03:00:00Z')
+  const rows = [{day:'2026-10-18',value:'1'},{day:'2026-10-19',value:'2'},
+    {day:'2026-10-23',value:'-4'},{day:'2026-10-25',value:'0'},{day:'2026-10-26',value:'9'}]
+  assert.deepEqual(history.mergeHistory(rows,null,at), rows.slice(1,4))
+  assert.deepEqual(history.historyWindow(Date.parse('2026-10-24T15:59:59Z')), {from:'2026-10-18',to:'2026-10-24'})
+  assert.deepEqual(history.historyWindow(Date.parse('2026-10-24T16:00:00Z')), {from:'2026-10-19',to:'2026-10-25'})
+  assert.deepEqual(history.historyWindow(Date.parse('2026-01-01T00:00:00Z')), {from:'2025-12-26',to:'2026-01-01'})
+})
+test('daily history deduplicates corrections and never invents records for absent days', () => {
+  const rows = [{day:'20261021',value:'100'}, {day:'2026-10-23',value:'0'},
+    {day:'2026-10-21',value:'200'},{day:'bad',value:'1'},{day:'2026-10-22',value:null}]
+  const result = history.mergeHistory(rows,{day:'2026-10-21',value:'-123'},now)
+  assert.deepEqual(result,[{day:'2026-10-21',value:'-123'},{day:'2026-10-23',value:'0'}])
+})
+test('each successful query accumulates report dates while same-day changes replace its point', async () => {
+  store.saveSession(session)
+  const at = Date.parse('2026-10-25T03:00:00Z')
+  for (const [date,value] of [['20261021','5285832'],['20261023','-1814421'],['20261023','-1700000'],['20261024','0']]) {
+    transport = async (_url,init) => response(init.body.includes('type=3') ? money('0') : profit(date,value))
+    await api.refreshSnapshot(true,at)
+  }
+  const snapshot = store.loadSnapshot(session,at)
+  assert.deepEqual(snapshot.history,[{day:'2026-10-21',value:'5285832'},{day:'2026-10-23',value:'-1700000'},{day:'2026-10-24',value:'0'}])
+  assert.equal(snapshot.day,'2026-10-24')
+  assert.equal(snapshot.profit.value,'0')
+})
+test('version 2 migrates its latest dated report into history without replacing login', async () => {
+  const old = await seed()
+  old.version = 2; delete old.history
+  store.saveSnapshot(session,old)
+  const upgraded = store.loadSnapshot(session,now)
+  assert.equal(upgraded.version,3)
+  assert.deepEqual(upgraded.history,[{day:'2026-10-21',value:'5285832'}])
+  assert.deepEqual(store.loadSession(),session)
+})
+test('history failure and week-long inactivity keep the latest amount but age points out of the chart', async () => {
+  await seed()
+  transport = async () => { throw Error('offline') }
+  const cached = await api.refreshSnapshot(true,now+60000)
+  assert.deepEqual(cached.history,[{day:'2026-10-21',value:'5285832'}])
+  const later = await api.refreshSnapshot(true,now+7*86400000)
+  assert.equal(later.profit.value,'5285832')
+  assert.equal(later.day,'2026-10-21')
+  assert.deepEqual(later.history,[])
+})
+test('a valid older report can fill a historical day without displacing the newest report', async () => {
+  await seed()
+  transport = async (_url,init) => response(init.body.includes('type=3') ? money('0') : profit('20261020','-50'))
+  const result = await api.refreshSnapshot(true,now)
+  assert.equal(result.day,'2026-10-21')
+  assert.equal(result.profit.value,'5285832')
+  assert.deepEqual(result.history,[{day:'2026-10-20',value:'-50'},{day:'2026-10-21',value:'5285832'}])
+})
+test('session renewal retains accumulated history and an account switch clears it', async () => {
+  await seed()
+  const next = renewable()
+  store.replaceSession(session,next)
+  assert.equal(store.loadSnapshot(next,now).history.length,1)
+  store.saveSession(another)
+  assert.deepEqual(store.loadSnapshot(another,now).history,[])
+  assert.deepEqual(store.loadSnapshot(next,now).history,[])
+})
+test('chart geometry preserves large-integer differences, constant values and actual date gaps', () => {
+  const base = 10n ** 60n
+  const series = history.trendSeries([{day:'2026-10-20',value:String(base)},
+    {day:'2026-10-21',value:String(base+1n)},{day:'2026-10-23',value:String(base+2n)}],now)
+  assert.deepEqual(series.map(p=>p.y),[0,0.5,1])
+  assert.equal(series[2].date-series[1].date,2*86400000)
+  const flat = history.trendSeries([{day:'2026-10-21',value:'0'},{day:'2026-10-23',value:'0'}],now)
+  assert.deepEqual(flat.map(p=>p.y),[0.5,0.5])
+})
+function nodesOfType(node,type) {
+  if (!node || typeof node !== 'object') return []
+  if (Array.isArray(node)) return node.flatMap(n=>nodesOfType(n,type))
+  return [...(node.type === type ? [node] : []),...nodesOfType(node.props.children,type)]
+}
+test('stock card draws only real dated marks, hides numeric axes and puts latest income below the chart', async () => {
+  const snapshot = await seed()
+  snapshot.history = [{day:'2026-10-20',value:'1200'},{day:'2026-10-21',value:'5285832'}]
+  for (const small of [true,false]) {
+    const card = ui.WalletCard({snapshot,small,now})
+    const chart = nodesOfType(card,'Chart')[0]
+    const line = nodesOfType(card,'LineChart')[0]
+    assert.equal(chart.props.chartXAxis,'hidden')
+    assert.equal(chart.props.chartYAxis,'hidden')
+    assert.equal(chart.props.chartLegend,'hidden')
+    assert.equal(line.props.marks.length,2)
+    assert.ok(line.props.marks.every(mark=>mark.annotation===undefined && mark.interpolationMethod==='linear'))
+    const rootChildren = card.props.children.flat().filter(Boolean)
+    assert.ok(rootChildren.indexOf(chart)<rootChildren.findIndex(n=>texts(n).includes('+5,285,832')))
+    assert.ok(texts(card).includes('2026.10.21'))
+    assert.ok(!texts(card).includes('1200'))
+  }
+})
+test('one report draws one point while an empty week draws no invented trend', async () => {
+  const snapshot = await seed()
+  const card = ui.WalletCard({snapshot,now})
+  const marks = nodesOfType(card,'LineChart')[0].props.marks
+  assert.equal(marks.length,1)
+  assert.equal(marks[0].symbol,'circle')
+  const empty = ui.WalletCard({snapshot:{...snapshot,history:[]},now})
+  assert.equal(nodesOfType(empty,'Chart').length,0)
+  assert.ok(texts(empty).includes('暂无近7天记录'))
+  assert.ok(texts(empty).includes('+5,285,832'))
+})
+test('overlapping widget and foreground queries merge history without reverting the latest day', async () => {
+  await seed()
+  const replies = []
+  transport = (_url,init) => new Promise(resolve => replies.push(() => resolve(response(
+    init.body.includes('type=3') ? money('0') : profit('20261020','-5')))))
+  const slow = api.refreshSnapshot(true,now)
+  transport = async (_url,init) => response(init.body.includes('type=3') ? money('0') : profit('20261023','9'))
+  await api.refreshSnapshot(true,now+1000)
+  replies.forEach(reply=>reply())
+  const last = await slow
+  assert.equal(last.day,'2026-10-23')
+  assert.equal(last.profit.value,'9')
+  assert.deepEqual(last.history.map(p=>p.day),['2026-10-20','2026-10-21','2026-10-23'])
+})
+test('rescanning the same account preserves its seven-day history', async () => {
+  await seed()
+  const signedIn = {...session,access_token:'synthetic_reauthorized_token'}
+  store.saveSession(signedIn)
+  const restored = store.loadSnapshot(signedIn,now)
+  assert.deepEqual(restored.history,[{day:'2026-10-21',value:'5285832'}])
+  assert.equal(restored.profit.value,'5285832')
 })

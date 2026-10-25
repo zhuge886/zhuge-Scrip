@@ -2,6 +2,7 @@ import { fetch } from "scripting"
 import { AMS_URL, authForm, balanceForm, emptySnapshot, Metric, parseBalance, parseProfit, profitForm, QueryError, safeMessage, Session, Snapshot } from "./model"
 import { loadSession, loadSnapshot, saveSnapshot } from "./store"
 import { canRenew, renewSession } from "./renew"
+import { mergeHistory } from "./history"
 
 export async function ams(session: Session, body: string): Promise<unknown> {
   try {
@@ -61,6 +62,12 @@ export function storeQueryResults(session: Session, previous: Snapshot,
   money: PromiseSettledResult<string>, daily: PromiseSettledResult<ReturnType<typeof parseProfit>>, now = Date.now()): Snapshot {
   const current = loadSession()
   if (!current || current.openid !== session.openid || current.appid !== session.appid || current.access_token !== session.access_token) return emptySnapshot()
+  // Foreground and widget queries can overlap. Include points saved while this
+  // request was in flight so a late response cannot erase another day's record.
+  const stored = loadSnapshot(session, now)
+  const knownHistory = mergeHistory([...(previous.history ?? []), ...stored.history], null, now)
+  if (stored.day && (!previous.day || stored.day > previous.day || stored.day === previous.day &&
+    (stored.profit.updatedAt ?? 0) > (previous.profit.updatedAt ?? 0))) previous = stored
   let day = previous.day
   let profit: Metric
   if (daily.status === "fulfilled" && daily.value.value !== null && daily.value.day &&
@@ -75,12 +82,14 @@ export function storeQueryResults(session: Session, previous: Snapshot,
     profit = failedMetric(previous.profit, daily.reason)
   }
   const next: Snapshot = {
-    version: 2, day: profit.value === null ? null : day, checkedAt: now,
+    version: 3, day: profit.value === null ? null : day, checkedAt: now,
     needsLogin: daily.status === "rejected" && daily.reason instanceof QueryError && daily.reason.code === "auth",
     balance: money.status === "fulfilled"
       ? { value: money.value, updatedAt: now, status: "ok", message: "当前哈夫币余额" }
       : failedMetric(previous.balance, money.reason),
     profit,
+    history: mergeHistory(knownHistory, daily.status === "fulfilled" && daily.value.day && daily.value.value !== null
+      ? { day: daily.value.day, value: daily.value.value } : null, now),
   }
   saveSnapshot(session, next)
   return next

@@ -21,13 +21,15 @@ export type Metric = {
   status: "ok" | "missing" | "cached" | "error"
   message: string
 }
+export type ProfitPoint = { day: string; value: string }
 export type Snapshot = {
-  version: 2
+  version: 3
   /** Actual date of the latest available report, never today's/yesterday's label. */
   day: string | null
   checkedAt: number | null
   balance: Metric
   profit: Metric
+  history: ProfitPoint[]
   needsLogin: boolean
 }
 export type ProfitReport = { value: string | null; day: string | null; message: string }
@@ -116,7 +118,7 @@ export function parseProfit(raw: unknown): ProfitReport {
 }
 export function emptySnapshot(): Snapshot {
   const metric: Metric = { value: null, updatedAt: null, status: "missing", message: "扫码后查看游戏收益" }
-  return { version: 2, day: null, checkedAt: null, balance: { ...metric }, profit: { ...metric }, needsLogin: true }
+  return { version: 3, day: null, checkedAt: null, balance: { ...metric }, profit: { ...metric }, history: [], needsLogin: true }
 }
 export function validSession(raw: unknown): Session | null {
   const s = object(raw)
