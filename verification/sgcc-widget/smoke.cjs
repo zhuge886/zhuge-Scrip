@@ -13,7 +13,7 @@ async function check(name, fn) {
 }
 
 function runtime() {
-  const storage = new Map(), keychain = new Map(), modules = new Map()
+  const storage = new Map(), keychain = new Map(), modules = new Map(), stateWrites = []
   const widget = { family: 'systemSmall', parameter: '', displaySize: { width: 155, height: 155 },
     output: null, present(element) { this.output = element }, reloadAll() {}, async preview() {} }
   const context = vm.createContext({
@@ -29,8 +29,8 @@ function runtime() {
   const scripting = new Proxy({
     Widget: widget, AbortController,
     fetch: async () => { throw new Error('Unexpected live network request in tests') },
-    useState: (value) => [typeof value === 'function' ? value() : value, () => {}],
-    useEffect() {},
+    useState: (value) => { let current = typeof value === 'function' ? value() : value; return [current, (next) => { current = typeof next === 'function' ? next(current) : next; stateWrites.push(current) }] },
+    useEffect() {}, useRef: (current) => ({ current }),
     Navigation: { useDismiss: () => () => {}, async present() {} }, Script: { exit() {} }
   }, { get: (target, key) => key in target ? target[key] : String(key) })
   function load(name) {
@@ -46,7 +46,7 @@ function runtime() {
     vm.runInContext(`(function(require,module,exports){${output}\n})`, context, { filename: file })(req, mod, mod.exports)
     return mod.exports
   }
-  return { load, storage, keychain, widget, context }
+  return { load, storage, keychain, widget, context, stateWrites }
 }
 
 function fixture(r) {
@@ -78,25 +78,6 @@ function mockSession(r, bound = []) {
     this.sess = { userId: 'test-user', accounts: bound }; return this.sess
   }
   return vendor
-}
-
-async function officialPage(script, respond, options = {}) {
-  const calls = []
-  const component = { $store: { getters: { getToken: options.token ?? 'fixture-web-token', getUserId: 'fixture-user' } },
-    $tools: { async apiPost(payload, endpoint) { calls.push({ payload, endpoint }); return respond(payload, endpoint) } } }
-  const window = {}
-  const page = { window, location: { protocol: options.protocol ?? 'https:', hostname: options.hostname ?? 'www.95598.cn' },
-    document: { querySelector: () => ({ __vue__: { $children: [component] } }) },
-    setTimeout: () => 1, clearTimeout() {} }
-  const started = vm.runInNewContext(`(function(){${script}})()`, page)
-  await new Promise(setImmediate)
-  return { calls, started, result: window.__zhugeSgccMetadataV1, window,
-    invoke: (payload, endpoint) => component.$tools.apiPost(payload, endpoint) }
-}
-
-function metadataResponse(overrides = {}) {
-  return { code: '1', data: { data: { dataList: [{ consNo: 'encrypted-fixture', consNo_dst: '0001234567',
-    orgNo: '1110209', proNo: '11102', elecTypeCode: '01', consName: 'do-not-copy', token: 'do-not-copy-token', ...overrides }] } } }
 }
 
 async function main() {
@@ -217,8 +198,8 @@ async function main() {
       store.savePreference({ ...p, consNo: '0007654321' }); store.saveCache(sentinel)
       return { list: [{ consType: '1', sumMoney: 5 }] }
     }
-    const result = await r.load('api/client').getData({ force: true, discover: true })
-    assert.equal(result.sourceKey, key); assert.equal(store.loadCache(), sentinel)
+    await assert.rejects(r.load('api/client').getData({ force: true, discover: true }), /已停止/)
+    assert.equal(store.loadCache(), sentinel); assert.equal(store.loadResolution(), null)
   })
   await check('password changes invalidate cached data and use the isolated keychain prefix', () => {
     const r = runtime(), { store } = configure(r)
@@ -263,10 +244,10 @@ async function main() {
       assert.equal(calls, 1, code)
     }
   })
-  await check('missing organization triggers metadata acquisition before any balance request', async () => {
+  await check('a missing organization catalog stops before any balance request', async () => {
     const r = runtime(); let calls = 0
     const app = { sess: {}, authed: async () => { calls++; throw new Error('供电单位代码不能为空') } }
-    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, { pause: async () => {} }), (e) => e.code === 'org_required')
+    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, { pause: async () => {} }), (e) => e.code === 'org_catalog_missing')
     assert.equal(calls, 0)
   })
   await check('a mismatched household response is rejected before saving or trying another scene', async () => {
@@ -288,7 +269,7 @@ async function main() {
   })
   await check('a saved scene is tried first while preserving the explicit household and province', async () => {
     const r = runtime(), calls = []
-    const app = { sess: {}, authed: async (endpoint, payload) => { calls.push(payload.data.list[0]); return { list: [{ sumMoney: 4, consType: '1' }] } } }
+    const app = { sess: {}, authed: async (endpoint, payload) => { calls.push(payload.data.list[0]); return { list: [{ consNoSrc: '0001234567', sumMoney: 4, consType: '1' }] } } }
     await r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, {
       preferred: { ...account(), org: '1110209', elec: '03' }, pause: async () => {} })
     assert.equal(calls.length, 1); assert.equal(calls[0].sceneType, '03'); assert.equal(calls[0].orgNo, '1110209')
@@ -333,168 +314,136 @@ async function main() {
     assert.equal(result.list[0].eleBill.sumMoney, 8)
     assert.ok(result.warnings.some((message) => message.includes('用电明细查询失败')))
   })
-  await check('a server orgNo-required response is converted into the official acquisition action', async () => {
+  await check('the Beijing city company uses its official directory code instead of a generated suffix', () => {
+    const r = runtime(), { organizationsFor } = r.load('organizations')
+    const bj = organizationsFor('11102')
+    assert.ok(bj.some((o) => o.code === '11401' && /城区/.test(o.name)))
+    assert.equal(organizationsFor('32101').length, 0)
+    assert.ok(bj.every((o) => o.provinceCode === '11102' && /^\d+$/.test(o.code)))
+    assert.equal(new Set(bj.map((o) => o.code)).size, bj.length)
+  })
+  await check('known account codes are deduplicated and cannot leak into another province', () => {
+    const r = runtime(), { organizationsFor } = r.load('organizations')
+    const list = organizationsFor('32101', [{ ...account(), pro: '32101', org: '3210001' },
+      { ...account(), pro: '32101', org: '3210001' }, account(), { ...account(), pro: '32101', org: 'invalid' }])
+    assert.equal(list.length, 1); assert.equal(list[0].code, '3210001')
+  })
+  await check('the shipped Beijing catalog matches the recorded public directory responses', () => {
+    const { ORGANIZATIONS } = runtime().load('organizations')
+    const evidence = JSON.parse(fs.readFileSync(path.join(__dirname, 'beijing-directory.json'), 'utf8'))
+    assert.equal(ORGANIZATIONS.length, 15)
+    for (const o of ORGANIZATIONS) {
+      assert.ok(evidence.entries.some((e) => e.orgNo === o.code && '国网北京' + e.orgName === o.name && e.pOrgNo === o.provinceCode && e.orgType === '03'))
+    }
+  })
+  const catalog = (n = 3) => Array.from({ length: n }, (_, i) => ({ provinceCode: '11102', code: String(20000 + i), name: `测试供电公司${i}` }))
+  await check('automatic companies try one scene across the directory and stop on a matching zero balance', async () => {
+    const r = runtime(), calls = []
+    const app = { sess: {}, async authed(endpoint, payload) {
+      const a = payload.data.list[0]; calls.push(a)
+      return a.orgNo === '20001' ? { list: [{ consNoSrc: '0001234567', sumMoney: 0, consType: '1' }] } : { list: [] }
+    } }
+    const out = await r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, { organizations: catalog(), pause: async () => {} })
+    assert.equal(calls.length, 2); assert.equal(calls[0].orgNo, '20000'); assert.equal(calls[1].orgNo, '20001')
+    assert.ok(calls.every((a) => a.sceneType === '01' && a.proCode === '11102' && a.consNoSrc === '0001234567'))
+    assert.equal(out.account.org, '20001'); assert.equal(out.data.eleBill.sumMoney, 0)
+    assert.match(out.queryInfo, /测试供电公司1/)
+  })
+  await check('explicit company selection never tries other company codes', async () => {
+    const r = runtime(), calls = []
+    const app = { sess: {}, async authed(endpoint, payload) { calls.push(payload.data.list[0]); return { list: [] } } }
+    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '11401', elec: '' }, { organizations: catalog(), pause: async () => {} }))
+    assert.equal(calls.length, 5); assert.ok(calls.every((a) => a.orgNo === '11401'))
+  })
+  await check('an invalid company skips its remaining scenes while other real companies can still be tried', async () => {
+    const r = runtime(), calls = []
+    const app = { sess: {}, async authed(endpoint, payload) {
+      const a = payload.data.list[0]; calls.push(a)
+      if (a.orgNo === '20000') throw new Error('供电单位代码无效')
+      return { list: [] }
+    } }
+    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, { organizations: catalog(2), pause: async () => {} }))
+    assert.equal(calls.length, 6); assert.equal(calls.filter((a) => a.orgNo === '20000').length, 1)
+  })
+  await check('the overall cap is thirty sequential requests and never expands beyond twenty known companies', async () => {
+    const r = runtime(), calls = []; let active = 0
+    const app = { sess: {}, async authed(endpoint, payload) { assert.equal(active++, 0); calls.push(payload.data.list[0]); await Promise.resolve(); active--; return { list: [] } } }
+    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, { organizations: catalog(25), pause: async () => {} }), (e) => e.code === 'probe_limit' && /尚未遍历全部/.test(e.message))
+    assert.equal(calls.length, 30); assert.equal(new Set(calls.map((a) => a.orgNo)).size, 20)
+    assert.deepEqual([...new Set(calls.slice(0,20).map((a) => a.sceneType))], ['01'])
+  })
+  await check('finishing exactly thirty candidates is reported as exhausted, not an incomplete search', async () => {
     const r = runtime(); let calls = 0
-    const app = { sess: {}, authed: async () => { calls++; throw new Error('orgNo不能为空') } }
-    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), elec: '' }),
-      (e) => e.code === 'org_required' && /从官网获取供电单位/.test(e.message))
-    assert.equal(calls, 1)
+    const app = { sess: {}, async authed() { calls++; return { list: [] } } }
+    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, { organizations: catalog(6), pause: async () => {} }), (e) => e.code === 'probe_exhausted' && !/尚未遍历全部/.test(e.message))
+    assert.equal(calls, 30)
   })
-  await check('the official page resolves the exact household and returns only minimal metadata', async () => {
-    const r = runtime(), script = r.load('api/official').buildOfficialLookupScript('0001234567', '11102')
-    const out = await officialPage(script, () => metadataResponse())
-    assert.equal(out.started.started, true); assert.equal(out.result.ok, true); assert.equal(out.calls.length, 1)
-    assert.equal(out.calls[0].endpoint, '/osg-open-uc0001/member/c9/f03')
-    assert.equal(out.calls[0].payload.data.consNo, '0001234567')
-    assert.equal(out.result.account.org, '1110209'); assert.equal(out.result.account.consNo, 'encrypted-fixture')
-    assert.equal(out.result.account.name, ''); assert.equal(out.result.account.src, '0001234567')
-    assert.doesNotMatch(JSON.stringify(out.result), /fixture-web-token|do-not-copy|elecAddr/)
+  await check('catalog entries from another province are not candidates', async () => {
+    const r = runtime(); let calls = 0
+    const app = { sess: {}, async authed() { calls++; return { list: [] } } }
+    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '' }, { organizations: catalog().map((o) => ({ ...o, provinceCode: '32101' })) }), (e) => e.code === 'org_catalog_missing')
+    assert.equal(calls, 0)
   })
-  await check('the official flow can fall back to the read-only payment-information query', async () => {
-    const r = runtime(), script = r.load('api/official').buildOfficialLookupScript('0001234567', '11102')
-    const out = await officialPage(script, (payload, endpoint) => endpoint.includes('/c9/f03')
-      ? { code: '1', data: { dataList: [] } }
-      : { code: '1', data: { consDetailLists: [{ consNo: '0001234567', orgNo: '1110208', elecTypeCode: '01' }] } })
-    assert.equal(out.result.ok, true); assert.equal(out.calls.length, 2)
-    assert.equal(out.calls[1].endpoint, '/osg-wp0002/member/charge/getElecUserChargeList')
-    assert.equal(out.calls[1].payload.consLists[0].consNo, '0001234567')
-    assert.equal(out.result.account.org, '1110208')
-    for (const request of out.calls) {
-      assert.doesNotMatch(request.endpoint, /bind|adFlag|submit|paymentSubmit/i)
-      assert.doesNotMatch(JSON.stringify(request.payload), /bizAmount|payAmount|adFlag/)
+  await check('automatic company matching rejects a balance without a verifiable full household ID', async () => {
+    const r = runtime(), { store, p } = configure(r), vendor = mockSession(r); let calls = 0
+    store.savePreference({ ...p, orgNo: '', elecType: '' })
+    vendor.SgApp.prototype.authed = async () => { calls++; return { list: [{ sumMoney: 9, consType: '1' }] } }
+    await assert.rejects(r.load('api/client').getData({ force: true, discover: true }), (e) => e.code === 'unverified_balance')
+    assert.equal(calls, 1); assert.equal(store.loadResolution(), null); assert.equal(store.loadCache(), null)
+  })
+  await check('company discovery stops on verification, permission and mandatory-org errors', async () => {
+    for (const [code, message] of [['RK006','需人机验证'],['429','限流'],['auth','登录失效'],['403','必须绑定户号'],['server','orgNo不能为空'],['net','请求超时']]) {
+      const r = runtime(); let calls = 0
+      const app = { sess: {}, async authed() { calls++; throw Object.assign(new Error(message), { code }) } }
+      await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, { organizations: catalog(), pause: async () => {} }), /已停止/)
+      assert.equal(calls, 1, code)
     }
   })
-  await check('the official observer sends no requests and captures only the users matching read query', async () => {
-    const r = runtime(), script = r.load('api/official').buildOfficialLookupScript('0001234567', '11102', true)
-    const out = await officialPage(script, () => metadataResponse(), { token: '' })
-    assert.equal(out.started.observing, true); assert.equal(out.calls.length, 0)
-    const response = await out.invoke({ data: { consNo: '0001234567', provCode: '11102' } }, '/osg-open-uc0001/member/c9/f03')
-    assert.equal(response.code, '1'); assert.equal(out.window.__zhugeSgccObservedMetadataV1.account.org, '1110209')
-    assert.doesNotMatch(JSON.stringify(out.window.__zhugeSgccObservedMetadataV1), /do-not-copy/)
+  await check('cancelling between attempts stops future requests and saves no combination', async () => {
+    const r = runtime(); let calls = 0, cancelled = false
+    const app = { sess: {}, async authed() { calls++; return { list: [] } } }
+    await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, {
+      organizations: catalog(), shouldContinue: () => !cancelled, pause: async () => { cancelled = true } }), (e) => e.code === 'cancelled')
+    assert.equal(calls, 1); assert.equal(r.load('store').loadResolution(), null)
   })
-  await check('the official observer does not capture unrelated paths or households', async () => {
-    for (const [payload, endpoint] of [
-      [{ data: { consNo: '0007654321', provCode: '11102' } }, '/osg-open-uc0001/member/c9/f03'],
-      [{ data: { consNo: '0001234567', provCode: '32101' } }, '/osg-open-uc0001/member/c9/f03'],
-      [{ data: { consNo: '0001234567', provCode: '11102' } }, '/unrelated-endpoint']]) {
-      const r = runtime(), script = r.load('api/official').buildOfficialLookupScript('0001234567', '11102', true)
-      const out = await officialPage(script, () => metadataResponse())
-      await out.invoke(payload, endpoint)
-      assert.equal(out.window.__zhugeSgccObservedMetadataV1, undefined)
-    }
+  await check('cancelling an in-flight successful query prevents its result from being saved', async () => {
+    const r = runtime(), { store, p } = configure(r), vendor = mockSession(r); let cancelled = false
+    store.savePreference({ ...p, orgNo: '', elecType: '01' })
+    vendor.SgApp.prototype.authed = async () => { cancelled = true; return { list: [{ consNoSrc: p.consNo, sumMoney: 9, consType: '1' }] } }
+    await assert.rejects(r.load('api/client').getData({ force: true, discover: true, shouldContinue: () => !cancelled }), (e) => e.code === 'cancelled')
+    assert.equal(store.loadResolution(), null); assert.equal(store.loadCache(), null)
   })
-  await check('an accounting-unit code is never guessed to be the required organization', async () => {
-    const r = runtime(), script = r.load('api/official').buildOfficialLookupScript('0001234567', '11102')
-    const out = await officialPage(script, () => metadataResponse({ orgNo: '', acctOrgNo: '1110209' }))
-    assert.equal(out.result.ok, false); assert.equal(out.result.code, 'metadata_missing')
-    assert.equal(out.result.account, undefined)
-  })
-  await check('unrelated, masked or different-region household metadata is rejected', async () => {
-    for (const patch of [{ consNo_dst: '0007654321' }, { consNo_dst: '000****567' }, { proNo: '32101' }]) {
-      const r = runtime(), script = r.load('api/official').buildOfficialLookupScript('0001234567', '11102')
-      const out = await officialPage(script, () => metadataResponse(patch))
-      assert.equal(out.result.ok, false); assert.equal(out.result.account, undefined)
-    }
-  })
-  await check('ambiguous official metadata is not selected or saved', async () => {
-    const r = runtime(), script = r.load('api/official').buildOfficialLookupScript('0001234567', '11102')
-    const response = metadataResponse(); response.data.data.dataList.push({ ...response.data.data.dataList[0], orgNo: '1110210' })
-    const out = await officialPage(script, () => response)
-    assert.equal(out.result.ok, false); assert.match(out.result.message, /多组/); assert.equal(out.calls.length, 1)
-  })
-  await check('official captcha and authentication failures stop without calling other endpoints', async () => {
-    for (const code of ['RK006', '-200', '429']) {
-      const r = runtime(), script = r.load('api/official').buildOfficialLookupScript('0001234567', '11102')
-      const out = await officialPage(script, () => ({ code, message: '请在官网完成验证' }))
-      assert.equal(out.result.ok, false); assert.equal(out.calls.length, 1)
-    }
-  })
-  await check('a nonofficial or insecure page is never queried', async () => {
-    for (const options of [{ hostname: 'example.com' }, { protocol: 'http:' }]) {
-      const r = runtime(), script = r.load('api/official').buildOfficialLookupScript('0001234567', '11102')
-      const out = await officialPage(script, () => metadataResponse(), options)
-      assert.equal(out.started.started, false); assert.equal(out.calls.length, 0)
-    }
-  })
-  await check('the official lookup requires a local website login without exporting a token', async () => {
-    const r = runtime(), script = r.load('api/official').buildOfficialLookupScript('0001234567', '11102')
-    const out = await officialPage(script, () => metadataResponse(), { token: '' })
-    assert.equal(out.started.started, false); assert.equal(out.calls.length, 0)
-    assert.match(out.started.message, /本人登录/)
-  })
-  await check('official errors redact long account identifiers and credential-like strings', async () => {
-    const r = runtime(), script = r.load('api/official').buildOfficialLookupScript('0001234567', '11102')
-    const out = await officialPage(script, () => ({ code: 'RK006', message: '0001234567 abcdefghijklmnopqrstuvwxyz123456 需要验证' }))
-    assert.doesNotMatch(out.result.message, /0001234567|abcdefghijklmnopqrstuvwxyz/)
-  })
-  await check('native official-page metadata is validated again at the boundary', () => {
-    const { validateOfficialAccount } = runtime().load('api/official')
-    const good = { ...account(), token: 'do-not-copy', name: 'do-not-copy' }
-    const sanitized = validateOfficialAccount(good, '0001234567', '11102')
-    assert.equal(sanitized.name, ''); assert.equal(sanitized.token, undefined)
-    for (const patch of [{ src: '0007654321' }, { pro: '32101' }, { org: '' }, { org: 'not-a-code' }]) {
-      assert.throws(() => validateOfficialAccount({ ...good, ...patch }, '0001234567', '11102'), /不匹配/)
-    }
-  })
-  await check('official acquisition stores metadata, preserves encrypted identifiers and invalidates old queries', async () => {
-    const r = runtime(), { store, p, key } = configure(r)
-    store.saveCache({ sourceKey: key }); store.saveResolution({ sourceKey: key, account: account(), savedAt: 1 })
-    const next = await r.load('api/official').syncOfficialMetadata(p, async () => ({ ...account(), org: '1110209', elec: '02' }))
-    assert.equal(next.orgNo, '1110209'); assert.equal(next.elecType, '02'); assert.ok(next.metadataRevision > 0)
-    assert.notEqual(r.load('accounts').sourceKey(next), key)
-    assert.equal(store.loadMetadata().account.consNo, 'encrypted-fixture')
-    assert.equal(store.loadCache(), null); assert.equal(store.loadResolution(), null)
-  })
-  await check('switching households clears auto-imported fields while retaining explicit overrides', () => {
-    const r = runtime(), { clearImportedFields } = r.load('accounts'), p = manual(r)
-    const patch = clearImportedFields(p, { consNo: '0007654321' }, account())
-    assert.equal(patch.orgNo, ''); assert.equal(patch.elecType, '')
-    const override = clearImportedFields({ ...p, orgNo: '1110999', elecType: '05' }, { consNo: '0007654321' }, account())
-    assert.equal(override.orgNo, undefined); assert.equal(override.elecType, undefined)
-    assert.equal(clearImportedFields(p, { barCount: 3 }, account()).orgNo, undefined)
-  })
-  await check('configuration changes while the official page is open prevent metadata from being saved', async () => {
-    const r = runtime(), { store, p } = configure(r)
-    await assert.rejects(r.load('api/official').syncOfficialMetadata(p, async () => {
-      store.savePreference({ ...p, consNo: '0007654321' }); return account()
-    }), /配置已改变/)
-    assert.equal(store.loadMetadata(), null)
-  })
-  await check('imported official metadata supplies orgNo and the encrypted household ID to the balance query', async () => {
+  await check('Beijing unbound discovery works with only household, province and a scene, then widget reuses it', async () => {
     const r = runtime(), { store, p } = configure(r), vendor = mockSession(r), calls = []
-    const selected = { ...p, orgNo: '', elecType: '' }; store.savePreference(selected)
-    await r.load('api/official').syncOfficialMetadata(selected, async () => ({ ...account(), org: '1110209' }))
-    vendor.SgApp.prototype.authed = async (endpoint, payload) => {
-      calls.push(payload.data.list[0]); return { list: [{ consNoSrc: p.consNo, consType: '1', sumMoney: 6 }] }
-    }
-    const result = await r.load('api/client').getData({ force: true, discover: true })
-    assert.equal(calls.length, 1); assert.equal(calls[0].orgNo, '1110209'); assert.equal(calls[0].consNo, 'encrypted-fixture')
-    assert.equal(result.list[0].eleBill.sumMoney, 6)
+    store.savePreference({ ...p, orgNo: '', elecType: '01' })
+    vendor.SgApp.prototype.authed = async (endpoint, payload) => { calls.push(payload.data.list[0]); return { list: [{ consNoSrc: p.consNo, sumMoney: 8, consType: '1' }] } }
+    const first = await r.load('api/client').getData({ force: true, discover: true })
+    assert.equal(first.list[0].eleBill.sumMoney, 8); assert.equal(calls[0].orgNo, '11401')
+    assert.equal(store.loadResolution().account.org, '11401'); store.clearCache(); calls.length = 0
+    await r.load('api/client').getData()
+    assert.equal(calls.length, 1); assert.equal(calls[0].orgNo, '11401')
   })
-  await check('the native official WebView uses the official origin, disposes and exports no cookies', async () => {
-    const r = runtime(), p = manual(r); let disposed = false
-    r.context.WebViewController = class {
-      constructor(options) { assert.equal(options.ephemeral, true) }
-      setCustomUserAgent() { return true }
-      async loadURL(url) { assert.equal(new URL(url).hostname, 'www.95598.cn'); return true }
-      async present() {}
-      async evaluateJavaScript(script) { return script.includes('var input =') ? { started: true } : { ok: true, account: account() } }
-      dispose() { disposed = true }
-    }
-    const out = await r.load('api/official').readOfficialMetadata(p)
-    assert.equal(out.org, account().org); assert.equal(disposed, true)
+  await check('a saved combination for a different household is not used as an automatic company hint', async () => {
+    const r = runtime(), calls = []
+    const app = { sess: {}, async authed(endpoint, payload) { calls.push(payload.data.list[0]); return { list: [{ consNoSrc: '0001234567', sumMoney: 1, consType: '1' }] } } }
+    await r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, {
+      preferred: { ...account(), src: '0007654321', org: '29999', elec: '05' }, organizations: catalog(), pause: async () => {} })
+    assert.equal(calls[0].orgNo, '20000'); assert.equal(calls[0].sceneType, '01')
   })
-  await check('a failed native official lookup still disposes the isolated WebView', async () => {
-    const r = runtime(); let disposed = false
-    r.context.WebViewController = class {
-      setCustomUserAgent() { return true }
-      async loadURL() { return true }
-      async present() {}
-      async evaluateJavaScript() { return { started: false, message: '请先在官网登录' } }
-      dispose() { disposed = true }
+  await check('changing region clears the previously selected company in the settings handler', () => {
+    const r = runtime(); configure(r)
+    // Exercise the actual region-picker callback and capture preference writes.
+    const original = r.load('views/Settings.tsx').Settings
+    const tree = original()
+    function find(node) {
+      if (!node || typeof node !== 'object') return null
+      if (node.props?.title === '所在地区') return node
+      for (const child of node.children ?? []) { const n = find(child); if (n) return n }
+      return null
     }
-    await assert.rejects(r.load('api/official').readOfficialMetadata(manual(r)), /官网登录/)
-    assert.equal(disposed, true)
+    find(tree).props.onChanged('32101')
+    assert.ok(r.stateWrites.some((value) => value?.provinceCode === '32101' && value.orgNo === ''))
+    assert.doesNotMatch(textOf(tree), /从官网获取供电单位/)
   })
   for (const family of ['systemSmall', 'systemMedium', 'accessoryRectangular', 'accessoryCircular', 'accessoryInline']) {
     await check(`renders balance-only data without invented usage totals (${family})`, async () => {
@@ -508,7 +457,7 @@ async function main() {
   await check('the settings screen offers named regions and scenes with optional metadata', () => {
     const r = runtime(), tree = r.load('views/Settings.tsx').Settings(), text = textOf(tree)
     assert.match(text, /江苏/); assert.match(text, /住宅/); assert.match(text, /新能源/)
-    assert.match(text, /从官网获取供电单位/); assert.match(text, /自动识别并查询/)
+    assert.match(text, /供电公司/); assert.match(text, /自动识别并查询/); assert.doesNotMatch(text, /从官网获取供电单位/)
     assert.doesNotMatch(text, /原查询返回的省份代码|orgNo|constType/)
   })
   process.stdout.write(`Passed ${checks} offline checks; no real State Grid account or endpoint was used.\n`)

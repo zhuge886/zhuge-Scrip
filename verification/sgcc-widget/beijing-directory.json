@@ -1,0 +1,123 @@
+{
+  "fetchedAt": "2026-10-25",
+  "website": "https://www.95598.cn/osgweb/",
+  "endpoint": "/osg-open-om0001/member/c13/f05",
+  "transport": "official website $tools.apiPost(areaCode, endpoint), anonymous client; TLS-verified requests",
+  "sourceComponent": "https://www.95598.cn/osgweb/js/chunk-e247704a.c1808474.js",
+  "provinceCode": "11102",
+  "scope": "15 distinct companies returned for 16 Beijing districts; not a complete list of all Beijing companies",
+  "entries": [
+    {
+      "areaCode": "110101",
+      "orgNo": "11401",
+      "orgName": "城区供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110102",
+      "orgNo": "11401",
+      "orgName": "城区供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110105",
+      "orgNo": "11402",
+      "orgName": "朝阳供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110106",
+      "orgNo": "11404",
+      "orgName": "丰台供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110107",
+      "orgNo": "11405",
+      "orgName": "石景山供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110108",
+      "orgNo": "11403",
+      "orgName": "海淀供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110109",
+      "orgNo": "11408",
+      "orgName": "门头沟供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110111",
+      "orgNo": "11409",
+      "orgName": "房山供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110112",
+      "orgNo": "11406",
+      "orgName": "通州供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110113",
+      "orgNo": "11414",
+      "orgName": "顺义供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110114",
+      "orgNo": "11407",
+      "orgName": "昌平供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110115",
+      "orgNo": "11410",
+      "orgName": "大兴供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110116",
+      "orgNo": "11412",
+      "orgName": "怀柔供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110117",
+      "orgNo": "11411",
+      "orgName": "平谷供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110118",
+      "orgNo": "11413",
+      "orgName": "密云供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    },
+    {
+      "areaCode": "110119",
+      "orgNo": "11415",
+      "orgName": "延庆供电公司",
+      "orgType": "03",
+      "pOrgNo": "11102"
+    }
+  ]
+}

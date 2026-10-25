@@ -15,12 +15,12 @@ import {
   Toggle,
   Widget,
   useEffect,
+  useRef,
   useState
 } from 'scripting'
 import { errorMessage, getData, sendSms } from '../api/client'
 import type { DataResult } from '../api/client'
-import { needsOrganizationInfo } from '../api/probe'
-import { syncOfficialMetadata } from '../api/official'
+import { organizationsFor } from '../organizations'
 import { normalize } from '../data'
 import {
   clearCache,
@@ -84,7 +84,8 @@ export function Settings() {
   const [result, setResult] = useState<DataResult | null>(null)
   const [advanced, setAdvanced] = useState(false)
   const [queryStatus, setQueryStatus] = useState('')
-  const [syncing, setSyncing] = useState(false)
+  const operation = useRef<{ cancelled: boolean } | null>(null)
+  const companies = organizationsFor(preference.provinceCode)
 
   useEffect(() => {
     savePreference(preference)
@@ -101,8 +102,10 @@ export function Settings() {
       patch = clearImportedFields(preference, patch, metadata?.key === metadataKey(preference) ? metadata.account : undefined)
       clearMetadata()
     }
+    if ('provinceCode' in patch && patch.provinceCode !== preference.provinceCode) patch = { ...patch, orgNo: '' }
     if (['phone', 'queryMode', 'queryScope', 'consNo', 'provinceCode', 'orgNo', 'elecType']
       .some((key) => key in patch)) {
+      if (operation.current) operation.current.cancelled = true
       clearCache()
       clearResolution()
       setResult(null)
@@ -135,49 +138,19 @@ export function Settings() {
     }
   }
 
-  const acquireMetadata = async (current: Preference): Promise<Preference> => {
-    setSyncing(true)
-    setQueryStatus('正在打开国网官网，请登录并查询此户号后点完成读取资料…')
-    try {
-      savePreference(current)
-      const next = await syncOfficialMetadata(current)
-      setPreference(next)
-      setResult(null)
-      setQueryStatus('已取得本户供电单位资料，可以继续查询')
-      return next
-    } finally { setSyncing(false) }
-  }
-
-  const onReadOfficial = async () => {
-    try { await acquireMetadata(preference) }
-    catch (error) {
-      setQueryStatus(errorMessage(error))
-      await Dialog.alert({ title: '获取资料失败', message: errorMessage(error) })
-    }
-  }
-
   const onRefresh = async () => {
+    const running = { cancelled: false }
+    operation.current = running
     setRefreshing(true)
     setQueryStatus('准备查询…')
     try {
       savePreference(preference)
       setPassword(password)
-      let prepared = preference
-      const query = async () => {
-        const key = sourceKey(prepared)
-        const value = await getData({ force: true, discover: prepared.queryMode === 'manual',
-          onProgress: (message) => { if (sourceKey(loadPreference()) === key) setQueryStatus(message) } })
-        if (value.error && needsOrganizationInfo({ message: value.error })) throw Object.assign(new Error(value.error), { code: 'org_required' })
-        return value
-      }
-      let next: DataResult
-      try { next = await query() }
-      catch (error) {
-        if (prepared.queryMode !== 'manual' || !needsOrganizationInfo(error)) throw error
-        prepared = await acquireMetadata(prepared)
-        next = await query()
-      }
-      if (sourceKey(loadPreference()) !== sourceKey(prepared)) throw new Error('查询期间配置已改变，请按新配置重新查询')
+      const key = sourceKey(preference)
+      const next = await getData({ force: true, discover: preference.queryMode === 'manual',
+        shouldContinue: () => !running.cancelled,
+        onProgress: (message) => { if (!running.cancelled && sourceKey(loadPreference()) === key) setQueryStatus(message) } })
+      if (sourceKey(loadPreference()) !== key || running.cancelled) throw new Error('查询已停止或配置已改变，请按当前配置重新查询')
       setResult(next)
       setQueryStatus(next.queryInfo ?? '查询完成')
       const { list, error, warnings } = next
@@ -192,6 +165,7 @@ export function Settings() {
       setQueryStatus(errorMessage(e))
       await Dialog.alert({ title: '刷新失败', message: errorMessage(e) })
     } finally {
+      operation.current = null
       setRefreshing(false)
     }
   }
@@ -221,7 +195,7 @@ export function Settings() {
       >
         <Section
           header={<Text>查询方式</Text>}
-          footer={<Text>输入户号并选择地区。缺少供电单位时会打开国网官网，登录并查询此户号后点完成读取资料，再继续查余额。无需自己寻找单位代码。</Text>}
+          footer={<Text>输入户号，选择地区和供电公司。公司不确定时可选自动，在已收录的真实公司列表中逐项尝试。仍需登录本人的网上国网账号。</Text>}
         >
           <Picker title="户号来源" value={preference.queryMode}
             onChanged={(value: string) => update({ queryMode: value as QueryMode })}>
@@ -238,7 +212,7 @@ export function Settings() {
         {preference.queryMode === 'manual' ? (
           <Section
             header={<Text>手动户号</Text>}
-            footer={<Text>保留户号开头的 0。供电单位通过官网获取，无需自己找代码。类型不确定可选自动；取得真实资料后保存供小组件使用。</Text>}
+            footer={<Text>保留户号开头的 0。北京已收录城区等供电公司。知道公司时直接选择，住宅用户建议选住宅；公司与类型均可自动尝试，最多 30 次，可随时停止。</Text>}
           >
             <TextField title="用电户号" prompt="完整户号" value={preference.consNo}
               keyboardType="numberPad" onChanged={(consNo: string) => update({ consNo })} />
@@ -249,6 +223,14 @@ export function Settings() {
               {preference.provinceCode && !REGIONS.some((region) => region.code === preference.provinceCode)
                 ? <Text tag={preference.provinceCode}>{`自定义地区 ${preference.provinceCode}`}</Text> : null}
             </Picker>
+            <Picker title="供电公司" value={preference.orgNo}
+              onChanged={(orgNo: string) => update({ orgNo })}>
+              <Text tag="">自动尝试已收录公司</Text>
+              {companies.map((company) => <Text key={company.code} tag={company.code}>{company.name}</Text>)}
+              {preference.orgNo && !companies.some((company) => company.code === preference.orgNo)
+                ? <Text tag={preference.orgNo}>{`自定义单位 ${preference.orgNo}`}</Text> : null}
+            </Picker>
+            {!companies.length ? <Text foregroundStyle="secondaryLabel">该地区暂未收录单位目录；可使用账号已有的同地区资料或在高级设置填写真实单位代码。</Text> : null}
             <Picker title="用电类型" value={preference.elecType}
               onChanged={(elecType: string) => update({ elecType })}>
               <Text tag="">自动尝试（推荐）</Text>
@@ -262,7 +244,7 @@ export function Settings() {
 
         {preference.queryMode === 'manual' && advanced ? (
           <Section header={<Text>可选查询资料</Text>}
-            footer={<Text>供电单位通常由官网读取后自动填入。官网未返回资料或要求授权时会明确报错，不会猜测单位代码。</Text>}>
+            footer={<Text>选公司会使用其真实目录代码。自定义代码优先于自动尝试；不要填写缴费商户编号或工商代码。</Text>}>
             <TextField title="供电单位代码（选填）" prompt="可留空" value={preference.orgNo}
               keyboardType="numberPad" onChanged={(orgNo: string) => update({ orgNo })} />
             <TextField title="自定义地区代码（选填）" prompt="通常用上面的地区选择即可" value={preference.provinceCode}
@@ -288,9 +270,9 @@ export function Settings() {
             title="密码"
             prompt="密码"
             value={password}
-            onChanged={(value: string) => { setResult(null); setPasswordText(value) }}
+            onChanged={(value: string) => { if (operation.current) operation.current.cancelled = true; setResult(null); setPasswordText(value) }}
           />
-          <Button action={onSendSms} disabled={sending || refreshing || syncing}>
+          <Button action={onSendSms} disabled={sending || refreshing}>
             <HStack>
               <Text>发送短信验证码</Text>
               <Spacer />
@@ -322,18 +304,14 @@ export function Settings() {
         ) : null}
 
         <Section header={<Text>数据</Text>}>
-          {preference.queryMode === 'manual' ? (
-            <Button action={onReadOfficial} disabled={syncing || refreshing || sending}>
-              <HStack><Text>从官网获取供电单位</Text><Spacer />{syncing ? <ProgressView /> : null}</HStack>
-            </Button>
-          ) : null}
-          <Button action={onRefresh} disabled={refreshing || syncing || sending}>
+          <Button action={onRefresh} disabled={refreshing || sending}>
             <HStack>
               <Text>{preference.queryMode === 'manual' ? '自动识别并查询' : '立即刷新'}</Text>
               <Spacer />
               {refreshing ? <ProgressView /> : null}
             </HStack>
           </Button>
+          {refreshing ? <Button title="停止自动尝试" action={() => { if (operation.current) operation.current.cancelled = true; setQueryStatus('正在停止，等待当前请求结束…') }} /> : null}
           {queryStatus ? <Text foregroundStyle="secondaryLabel">{queryStatus}</Text> : null}
           <Button title="清除数据缓存" role="destructive" action={onClearCache} />
         </Section>

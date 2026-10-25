@@ -20,7 +20,7 @@ export function normalizePhone(value: string): string {
 export function sourceKey(preference: Preference): string {
   const p = preference
   return JSON.stringify([
-    'sgcc-manual-v3', normalizePhone(p.phone), p.queryMode, p.queryScope, p.metadataRevision,
+    'sgcc-manual-v4', normalizePhone(p.phone), p.queryMode, p.queryScope, p.metadataRevision,
     ...(p.queryMode === 'manual'
       ? [p.consNo.trim(), p.provinceCode.trim(), p.orgNo.trim(), p.elecType.trim()]
       : [])

@@ -16,6 +16,7 @@ import type { Preference } from '../store'
 import { normalizePhone, selectAccounts, sourceKey, metadataKey } from '../accounts'
 import type { PowerAccount } from '../accounts'
 import { probeBalance } from './probe'
+import { organizationsFor } from '../organizations'
 
 /** Same as the Scriptable version: at most one round of requests every 4 hours. */
 export const MIN_FETCH_INTERVAL_MS = 4 * 60 * 60 * 1000
@@ -75,7 +76,7 @@ function createApp(preference = loadPreference()) {
   return new SgApp(createCtx(String(smsCode || '').trim()), normalizePhone(phone), password)
 }
 
-async function fetchAccounts(preference: Preference, discover: boolean, onProgress?: (message: string) => void) {
+async function fetchAccounts(preference: Preference, discover: boolean, onProgress?: (message: string) => void, shouldContinue?: () => boolean) {
   onProgress?.('正在登录网上国网…')
   const app = createApp(preference)
   const { accounts: bound = [] } = await app.ensure()
@@ -96,7 +97,9 @@ async function fetchAccounts(preference: Preference, discover: boolean, onProgre
         const saved = loadResolution()
         const preferred = saved?.sourceKey === key ? saved.account : undefined
         if (discover) {
-          const resolved = await probeBalance(app, account, { preferred, onProgress })
+          const resolved = await probeBalance(app, account, { preferred, onProgress,
+            organizations: organizationsFor(account.pro, bound),
+            shouldContinue: () => sourceKey(loadPreference()) === key && shouldContinue?.() !== false })
           queryInfo = resolved.queryInfo
           item = resolved.data
           if (sourceKey(loadPreference()) === key) {
@@ -153,8 +156,8 @@ export function errorMessage(e: unknown): string {
  * Cached data when it is younger than 4 hours, otherwise a fresh fetch. A
  * failed fetch falls back to the cache; only with no cache at all does it throw.
  */
-export async function getData({ force = false, discover = false, onProgress }: {
-  force?: boolean; discover?: boolean; onProgress?: (message: string) => void
+export async function getData({ force = false, discover = false, onProgress, shouldContinue }: {
+  force?: boolean; discover?: boolean; onProgress?: (message: string) => void; shouldContinue?: () => boolean
 } = {}): Promise<DataResult> {
   const cache = loadCache()
   const preference = loadPreference()
@@ -168,10 +171,10 @@ export async function getData({ force = false, discover = false, onProgress }: {
     if (preference.queryMode === 'manual' && !discover && saved?.sourceKey !== key) {
       throw new Error('请先在脚本中选择地区并点「自动识别并查询」；小组件不会自动轮试类型')
     }
-    const result = await fetchAccounts(preference, discover, onProgress)
+    const result = await fetchAccounts(preference, discover, onProgress, shouldContinue)
     const next: Cache = { sourceKey: key, fetchedAt: Date.now(), ...result }
     // A settings change during the request must not overwrite the new account's cache.
-    if (sourceKey(loadPreference()) === key) saveCache(next)
+    if (sourceKey(loadPreference()) === key && shouldContinue?.() !== false) saveCache(next)
     return next
   } catch (e) {
     if (!matchingCache) throw e
