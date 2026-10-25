@@ -9,7 +9,7 @@
 | 功能 | 版本 | 用途 | 远程导入 | 使用说明 |
 | --- | --- | --- | --- | --- |
 | 电量监控 | 1.1.1 | 中文电量界面、简洁桌面圆环与百分比、标准蓝牙配件按需读取 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget) | [查看说明](battery-widget/README.md) |
-| 三角洲收益 | 1.4.0 | 近7天收益折线、查询后按日累计、最近收益与日期、微信自动续期 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
+| 三角洲收益 | 1.5.0 | 天蓝简洁卡片、7天平滑曲线、最近收益与日期、微信自动续期 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
 | 网上国网·手动户号 | 1.2.0 | 地区/类型选择、五次以内自动尝试、供电单位选填、成功组合复用；真实查询待验证 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
 
 ## 远程导入链接（点击代码块右上角即可复制）
@@ -39,7 +39,7 @@ https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget
 https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget
 ```
 
-在 **Scripting → 导入远程脚本** 中粘贴，确认名称 **三角洲收益**、版本 **1.4.0**。股票式卡片上方显示近7天无数字折线，下方显示最近收益与日期。每次查询按日报日期累计，同日覆盖，缺失日期不补零；旧版仅有的最近一期会迁移成一个点，历史随后逐步积累。支持白底反差色与透明模式，保留登录及自动续期。已通过类型检查和 52 项模拟测试，原生图表仍需手机确认。
+在 **Scripting → 导入远程脚本** 中粘贴，确认名称 **三角洲收益**、版本 **1.5.0**。参考金融卡片重新设计为天蓝主色：细蓝平滑曲线、浅渐变、最近收益与日期。移除桌面的游戏名和币种标签，应用内改为白色页面与浅蓝主卡。保留7天历史累计、登录及续期，52 项检查通过；原生外观仍需手机确认。
 
 [使用说明](delta-force-widget/README.md) · [接口分析](delta-force-widget/API.md) · [验证记录](delta-force-widget/VERIFICATION.md)
 

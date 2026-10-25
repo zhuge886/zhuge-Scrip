@@ -8,7 +8,7 @@ const ts = require('typescript')
 const root = path.resolve(__dirname, '../../delta-force-widget')
 let transport, storage, keychain, views
 const original = Module._load
-const elements = Object.fromEntries(['VStack', 'HStack', 'Text', 'Spacer', 'Image', 'Chart', 'LineChart'].map(name => [name, name]))
+const elements = Object.fromEntries(['VStack', 'HStack', 'Text', 'Spacer', 'Image', 'Chart', 'LineChart', 'AreaChart'].map(name => [name, name]))
 Module._load = function(name, ...args) {
   if (name === 'scripting') return { ...elements, fetch: (...args) => transport(...args) }
   return original.call(this, name, ...args)
@@ -303,18 +303,18 @@ test('small and medium widgets show dated income and omit unavailable balance en
       const labels = texts(ui.WalletCard({ snapshot: missing, small }))
       assert.ok(labels.includes('+5,285,832'))
       assert.ok(labels.includes('2026.10.21'))
-      assert.ok(!labels.includes('总哈夫币'))
+      assert.ok(!labels.includes('余额'))
       assert.ok(!labels.join(' ').includes('昨日'))
     }
     const zeroBalance = { ...snapshot, balance: { ...snapshot.balance, value: '0' } }
-    assert.ok(texts(ui.WalletCard({ snapshot: zeroBalance, small })).includes('总哈夫币'))
+    assert.ok(texts(ui.WalletCard({ snapshot: zeroBalance, small })).includes('余额'))
   }
 })
 test('empty widgets never invent an income amount or report date', () => {
   const labels = texts(ui.WalletCard({ snapshot: model.emptySnapshot(), small: true }))
   assert.ok(labels.includes('待同步'))
   assert.ok(labels.includes('暂无记录'))
-  assert.ok(!labels.includes('总哈夫币'))
+  assert.ok(!labels.includes('余额'))
   assert.ok(!labels.includes('0'))
 })
 
@@ -642,7 +642,9 @@ test('stock card draws only real dated marks, hides numeric axes and puts latest
     assert.equal(chart.props.chartYAxis,'hidden')
     assert.equal(chart.props.chartLegend,'hidden')
     assert.equal(line.props.marks.length,2)
-    assert.ok(line.props.marks.every(mark=>mark.annotation===undefined && mark.interpolationMethod==='linear'))
+    assert.ok(line.props.marks.every(mark=>mark.annotation===undefined && mark.interpolationMethod==='monotone'))
+    assert.equal(line.props.marks.filter(mark=>mark.symbol==='circle').length,1)
+    assert.ok(!texts(card).join(' ').match(/三角洲行动|哈夫币|哈弗币/))
     const rootChildren = card.props.children.flat().filter(Boolean)
     assert.ok(rootChildren.indexOf(chart)<rootChildren.findIndex(n=>texts(n).includes('+5,285,832')))
     assert.ok(texts(card).includes('2026.10.21'))
@@ -657,7 +659,7 @@ test('one report draws one point while an empty week draws no invented trend', a
   assert.equal(marks[0].symbol,'circle')
   const empty = ui.WalletCard({snapshot:{...snapshot,history:[]},now})
   assert.equal(nodesOfType(empty,'Chart').length,0)
-  assert.ok(texts(empty).includes('暂无近7天记录'))
+  assert.ok(texts(empty).includes('等待收益记录'))
   assert.ok(texts(empty).includes('+5,285,832'))
 })
 test('overlapping widget and foreground queries merge history without reverting the latest day', async () => {
