@@ -5,6 +5,11 @@ import type { RawAccount } from '../data'
 
 export const MAX_PROBE_ATTEMPTS = ELEC_TYPES.length
 
+export function needsOrganizationInfo(error: unknown): boolean {
+  const e = error as { code?: unknown; message?: unknown }
+  return e?.code === 'org_required' || /(?:orgNo|供电单位|机构代码).*(?:必填|不能为空|不能为?空|为空|缺失)/i.test(String(e?.message ?? error))
+}
+
 /** Only retry errors a scene change might fix; transport/auth/permission errors stop. */
 export function canTryAnotherType(error: unknown): boolean {
   const e = error as { code?: unknown; message?: unknown }
@@ -27,6 +32,9 @@ export async function probeBalance(
   app: Parameters<typeof queryAccount>[0], account: PowerAccount, options: ProbeOptions = {}
 ): Promise<{ account: PowerAccount; data: RawAccount; queryInfo: string }> {
   const base = { ...account, org: account.org || options.preferred?.org || '' }
+  if (!/^\d+$/.test(base.org)) {
+    throw Object.assign(new Error('缺少供电单位资料，请点「从官网获取供电单位」，在官方网页登录后点完成；无需自己填写 orgNo。'), { code: 'org_required' })
+  }
   const types: string[] = account.elec ? [account.elec] : ELEC_TYPES.map((item) => item.code)
   const preferred = options.preferred?.elec
   if (!account.elec && preferred && types.includes(preferred)) {
@@ -46,6 +54,9 @@ export async function probeBalance(
       return { account: resolved, data, queryInfo }
     } catch (error) {
       const e = error as { code?: unknown; message?: unknown }
+      if (needsOrganizationInfo(error)) {
+        throw Object.assign(new Error('国网要求提供供电单位，请点「从官网获取供电单位」，登录后读取本户资料再查询。'), { code: 'org_required' })
+      }
       attempts.push(`${label}：${e?.message ?? String(error)}`)
       if (!canTryAnotherType(error) || i === types.length - 1) {
         const prefix = canTryAnotherType(error)

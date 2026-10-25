@@ -19,17 +19,21 @@ import {
 } from 'scripting'
 import { errorMessage, getData, sendSms } from '../api/client'
 import type { DataResult } from '../api/client'
+import { needsOrganizationInfo } from '../api/probe'
+import { syncOfficialMetadata } from '../api/official'
 import { normalize } from '../data'
 import {
   clearCache,
   clearResolution,
+  clearMetadata,
   getPassword,
   loadPreference,
+  loadMetadata,
   savePreference,
   setPassword
 } from '../store'
 import type { Dimension, Preference, QueryMode, QueryScope } from '../store'
-import { sourceKey } from '../accounts'
+import { sourceKey, metadataKey, clearImportedFields } from '../accounts'
 import { REGIONS, ELEC_TYPES } from '../regions'
 
 const MIN_BARS = 3
@@ -80,6 +84,7 @@ export function Settings() {
   const [result, setResult] = useState<DataResult | null>(null)
   const [advanced, setAdvanced] = useState(false)
   const [queryStatus, setQueryStatus] = useState('')
+  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     savePreference(preference)
@@ -91,6 +96,11 @@ export function Settings() {
   }, [password])
 
   const update = (patch: Partial<Preference>) => {
+    if (['phone', 'consNo', 'provinceCode'].some((key) => key in patch)) {
+      const metadata = loadMetadata()
+      patch = clearImportedFields(preference, patch, metadata?.key === metadataKey(preference) ? metadata.account : undefined)
+      clearMetadata()
+    }
     if (['phone', 'queryMode', 'queryScope', 'consNo', 'provinceCode', 'orgNo', 'elecType']
       .some((key) => key in patch)) {
       clearCache()
@@ -125,16 +135,49 @@ export function Settings() {
     }
   }
 
+  const acquireMetadata = async (current: Preference): Promise<Preference> => {
+    setSyncing(true)
+    setQueryStatus('正在打开国网官网，请登录并查询此户号后点完成读取资料…')
+    try {
+      savePreference(current)
+      const next = await syncOfficialMetadata(current)
+      setPreference(next)
+      setResult(null)
+      setQueryStatus('已取得本户供电单位资料，可以继续查询')
+      return next
+    } finally { setSyncing(false) }
+  }
+
+  const onReadOfficial = async () => {
+    try { await acquireMetadata(preference) }
+    catch (error) {
+      setQueryStatus(errorMessage(error))
+      await Dialog.alert({ title: '获取资料失败', message: errorMessage(error) })
+    }
+  }
+
   const onRefresh = async () => {
     setRefreshing(true)
     setQueryStatus('准备查询…')
     try {
       savePreference(preference)
       setPassword(password)
-      const key = sourceKey(preference)
-      const next = await getData({ force: true, discover: preference.queryMode === 'manual',
-        onProgress: (message) => { if (sourceKey(loadPreference()) === key) setQueryStatus(message) } })
-      if (sourceKey(loadPreference()) !== key) throw new Error('查询期间配置已改变，请按新配置重新查询')
+      let prepared = preference
+      const query = async () => {
+        const key = sourceKey(prepared)
+        const value = await getData({ force: true, discover: prepared.queryMode === 'manual',
+          onProgress: (message) => { if (sourceKey(loadPreference()) === key) setQueryStatus(message) } })
+        if (value.error && needsOrganizationInfo({ message: value.error })) throw Object.assign(new Error(value.error), { code: 'org_required' })
+        return value
+      }
+      let next: DataResult
+      try { next = await query() }
+      catch (error) {
+        if (prepared.queryMode !== 'manual' || !needsOrganizationInfo(error)) throw error
+        prepared = await acquireMetadata(prepared)
+        next = await query()
+      }
+      if (sourceKey(loadPreference()) !== sourceKey(prepared)) throw new Error('查询期间配置已改变，请按新配置重新查询')
       setResult(next)
       setQueryStatus(next.queryInfo ?? '查询完成')
       const { list, error, warnings } = next
@@ -178,7 +221,7 @@ export function Settings() {
       >
         <Section
           header={<Text>查询方式</Text>}
-          footer={<Text>手动模式输入户号并选择所在地区即可发起查询。类型可自动尝试，供电单位可留空。仍需登录，能否查到未绑定户号取决于当地接口。</Text>}
+          footer={<Text>输入户号并选择地区。缺少供电单位时会打开国网官网，登录并查询此户号后点完成读取资料，再继续查余额。无需自己寻找单位代码。</Text>}
         >
           <Picker title="户号来源" value={preference.queryMode}
             onChanged={(value: string) => update({ queryMode: value as QueryMode })}>
@@ -195,7 +238,7 @@ export function Settings() {
         {preference.queryMode === 'manual' ? (
           <Section
             header={<Text>手动户号</Text>}
-            footer={<Text>保留户号开头的 0。住宅适合一般租房；不确定就选自动。自动模式最多尝试五种类型，成功后保存可用组合，不改变官方 App 的绑定关系。</Text>}
+            footer={<Text>保留户号开头的 0。供电单位通过官网获取，无需自己找代码。类型不确定可选自动；取得真实资料后保存供小组件使用。</Text>}
           >
             <TextField title="用电户号" prompt="完整户号" value={preference.consNo}
               keyboardType="numberPad" onChanged={(consNo: string) => update({ consNo })} />
@@ -219,7 +262,7 @@ export function Settings() {
 
         {preference.queryMode === 'manual' && advanced ? (
           <Section header={<Text>可选查询资料</Text>}
-            footer={<Text>不知道这些代码就留空。不会枚举供电单位，也不会自动切换地区。若服务端明确要求供电单位或户号授权，自动更换类型无法补齐。</Text>}>
+            footer={<Text>供电单位通常由官网读取后自动填入。官网未返回资料或要求授权时会明确报错，不会猜测单位代码。</Text>}>
             <TextField title="供电单位代码（选填）" prompt="可留空" value={preference.orgNo}
               keyboardType="numberPad" onChanged={(orgNo: string) => update({ orgNo })} />
             <TextField title="自定义地区代码（选填）" prompt="通常用上面的地区选择即可" value={preference.provinceCode}
@@ -247,7 +290,7 @@ export function Settings() {
             value={password}
             onChanged={(value: string) => { setResult(null); setPasswordText(value) }}
           />
-          <Button action={onSendSms} disabled={sending}>
+          <Button action={onSendSms} disabled={sending || refreshing || syncing}>
             <HStack>
               <Text>发送短信验证码</Text>
               <Spacer />
@@ -279,7 +322,12 @@ export function Settings() {
         ) : null}
 
         <Section header={<Text>数据</Text>}>
-          <Button action={onRefresh} disabled={refreshing}>
+          {preference.queryMode === 'manual' ? (
+            <Button action={onReadOfficial} disabled={syncing || refreshing || sending}>
+              <HStack><Text>从官网获取供电单位</Text><Spacer />{syncing ? <ProgressView /> : null}</HStack>
+            </Button>
+          ) : null}
+          <Button action={onRefresh} disabled={refreshing || syncing || sending}>
             <HStack>
               <Text>{preference.queryMode === 'manual' ? '自动识别并查询' : '立即刷新'}</Text>
               <Spacer />

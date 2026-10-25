@@ -20,14 +20,27 @@ export function normalizePhone(value: string): string {
 export function sourceKey(preference: Preference): string {
   const p = preference
   return JSON.stringify([
-    'sgcc-manual-v2', normalizePhone(p.phone), p.queryMode, p.queryScope,
+    'sgcc-manual-v3', normalizePhone(p.phone), p.queryMode, p.queryScope, p.metadataRevision,
     ...(p.queryMode === 'manual'
       ? [p.consNo.trim(), p.provinceCode.trim(), p.orgNo.trim(), p.elecType.trim()]
       : [])
   ])
 }
 
-export function selectAccounts(preference: Preference, bound: PowerAccount[]): PowerAccount[] {
+export function metadataKey(preference: Preference): string {
+  return JSON.stringify([normalizePhone(preference.phone), preference.consNo.trim(), preference.provinceCode.trim()])
+}
+
+export function clearImportedFields(
+  preference: Preference, patch: Partial<Preference>, metadata?: PowerAccount
+): Partial<Preference> {
+  if (!metadata || !['phone', 'consNo', 'provinceCode'].some((key) => key in patch)) return patch
+  return { ...patch,
+    ...(preference.orgNo === metadata.org ? { orgNo: '' } : {}),
+    ...(metadata.elec && preference.elecType === metadata.elec ? { elecType: '' } : {}) }
+}
+
+export function selectAccounts(preference: Preference, bound: PowerAccount[], metadata?: PowerAccount): PowerAccount[] {
   if (preference.queryMode === 'bound') {
     if (!bound.length) throw new Error('当前账号没有绑定户号，请切换「手动户号」并填写查询资料')
     return bound.slice(0, MAX_ACCOUNTS)
@@ -44,6 +57,9 @@ export function selectAccounts(preference: Preference, bound: PowerAccount[]): P
   if (!pro) throw new Error('请先选择户号所在地区')
   if (![pro, org, elec].every((value) => value === '' || /^\d+$/.test(value))) {
     throw new Error('高级设置中的代码应为数字；不知道供电单位代码时请留空')
+  }
+  if (metadata?.src === consNo && metadata.pro === pro) {
+    return [{ ...metadata, org: org || metadata.org, elec: elec || metadata.elec }]
   }
   return [{ consNo, src: consNo, pro, org, elec, name: '', orgName: '' }]
 }

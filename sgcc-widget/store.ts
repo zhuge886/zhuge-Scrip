@@ -23,6 +23,7 @@ export type Preference = {
   provinceCode: string
   orgNo: string
   elecType: string
+  metadataRevision: number
   dimension: Dimension
   barCount: number
   showStepProgress: boolean
@@ -41,6 +42,7 @@ export type Cache = {
 }
 
 export type Resolution = { sourceKey: string; account: PowerAccount; savedAt: number }
+export type AccountMetadata = { key: string; account: PowerAccount; fetchedAt: number }
 
 export const defaultPreference: Preference = {
   phone: '',
@@ -51,6 +53,7 @@ export const defaultPreference: Preference = {
   provinceCode: '',
   orgNo: '',
   elecType: '',
+  metadataRevision: 0,
   dimension: 'daily',
   barCount: 7,
   showStepProgress: true,
@@ -64,6 +67,7 @@ const KEY_PREFERENCE = 'preference'
 const KEY_DATA = 'data'
 const KEY_PASSWORD = `${KEYCHAIN_PREFIX}password`
 const KEY_RESOLUTION = 'resolved-account-v2'
+const KEY_METADATA = 'official-account-metadata-v1'
 
 export function loadPreference(): Preference {
   const stored = Storage.get<Partial<Preference>>(KEY_PREFERENCE) ?? {}
@@ -113,5 +117,17 @@ export function saveResolution(resolution: Resolution) {
 
 export function clearResolution() {
   Storage.remove(KEY_RESOLUTION)
+}
+
+export function loadMetadata(): AccountMetadata | null {
+  return Storage.get<AccountMetadata>(KEY_METADATA) ?? null
+}
+
+export function saveMetadata(metadata: AccountMetadata) {
+  Storage.set(KEY_METADATA, metadata)
+}
+
+export function clearMetadata() {
+  Storage.remove(KEY_METADATA)
 }
 

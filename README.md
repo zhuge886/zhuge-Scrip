@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- |
 | 电量监控 | 1.1.1 | 中文电量界面、简洁桌面圆环与百分比、标准蓝牙配件按需读取 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget) | [查看说明](battery-widget/README.md) |
 | 三角洲收益 | 1.6.0 | 股市风格白灰卡片、盈利红 / 亏损绿、原生预览与7天曲线 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
-| 网上国网·手动户号 | 1.2.0 | 地区/类型选择、五次以内自动尝试、供电单位选填、成功组合复用；真实查询待验证 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
+| 网上国网·手动户号 | 1.3.0 | 官网登录获取供电单位，避免空 orgNo 请求；余额查询与小组件；真机流程待验证 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
 
 ## 远程导入链接（点击代码块右上角即可复制）
 
@@ -49,9 +49,9 @@ https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget
 https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget
 ```
 
-更新到 **1.2.0**：输入户号、选择地区，类型默认自动尝试，也可选择住宅/店铺/电动车/企事业/新能源。供电单位改为可选高级设置，成功组合自动保存供小组件复用。仅在本户号和所选地区内最多尝试五种类型；验证码、限流、权限和网络错误立即停止。部分地区仍可能要求单位资料或绑定授权，**真实查询待验证**。
+更新到 **1.3.0**，处理“orgNo不能为空”：新增“从官网获取供电单位”。在官方网页登录并查询本户后点完成，脚本核对、保存真实资料，再继续查余额；缺少单位时不再反复更换类型或发送空单位请求。官网验证需要本人完成，**真实官网读取和余额查询仍待 iPhone 验收**。
 
-[使用说明](sgcc-widget/README.md) · [接口说明](sgcc-widget/API.md) · [验证状态](sgcc-widget/VERIFICATION.md)
+[使用说明](sgcc-widget/README.md) · [接口说明](sgcc-widget/API.md) · [验证记录](sgcc-widget/VERIFICATION.md)
 
 ## 仓库结构
 
@@ -72,7 +72,7 @@ zhuge-Scrip/
 ├── installers/
 │   └── battery-widget.tsx            # 电量监控可选安装器
 ├── sgcc-widget/                      # 网上国网·手动户号：独立 Scripting 项目
-│   ├── script.json                   # 版本 1.2.0，地区选择与有限自动尝试
+│   ├── script.json                   # 版本 1.3.0，官网获取供电单位资料
 │   ├── index.tsx                     # 登录、手动户号资料与查询结果
 │   ├── widget.tsx                    # 余额与用电信息组件
 │   └── README.md                     # 使用步骤与接口限制
@@ -90,4 +90,5 @@ zhuge-Scrip/
 4. 需要安装器或开发检查时，分别放入 `installers/<功能目录名>.tsx` 和 `verification/<功能目录名>/`。
 
 正式导入链接统一使用 `main` 分支下的功能目录，避免把整个多功能仓库作为单个脚本导入。
+
 

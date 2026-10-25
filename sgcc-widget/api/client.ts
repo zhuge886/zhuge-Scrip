@@ -6,13 +6,14 @@ import {
   loadCache,
   loadPreference,
   loadResolution,
+  loadMetadata,
   saveCache,
   saveResolution
 } from '../store'
 import type { Cache } from '../store'
 import type { RawAccount } from '../data'
 import type { Preference } from '../store'
-import { normalizePhone, selectAccounts, sourceKey } from '../accounts'
+import { normalizePhone, selectAccounts, sourceKey, metadataKey } from '../accounts'
 import type { PowerAccount } from '../accounts'
 import { probeBalance } from './probe'
 
@@ -78,7 +79,8 @@ async function fetchAccounts(preference: Preference, discover: boolean, onProgre
   onProgress?.('正在登录网上国网…')
   const app = createApp(preference)
   const { accounts: bound = [] } = await app.ensure()
-  const accounts = selectAccounts(preference, bound)
+  const metadata = loadMetadata()
+  const accounts = selectAccounts(preference, bound, metadata?.key === metadataKey(preference) ? metadata.account : undefined)
 
   const list: (RawAccount | null)[] = []
   const warnings: string[] = []
