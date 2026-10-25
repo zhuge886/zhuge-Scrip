@@ -513,17 +513,19 @@ function contrast(first, second) {
   const a = luminance(first), b = luminance(second)
   return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)
 }
-test('ordinary widgets remain readable on white for positive, negative, zero and missing income', async () => {
+test('ordinary widgets remain readable across the blue gradient for positive, negative, zero and missing income', async () => {
   const original = await seed()
   for (const small of [true,false]) for (const value of ['5285832','-1814421','0',null]) {
     const card = ui.WalletCard({snapshot:{...original,profit:{...original.profit,value}},small})
-    assert.equal(card.props.widgetBackground,'#FFFFFF')
+    const backgrounds = card.props.widgetBackground.colors
+    assert.ok(backgrounds.length>=2)
+    assert.ok(backgrounds.every(color=>parseInt(color.slice(5,7),16)>parseInt(color.slice(1,3),16)))
     const nodes = textNodes(card)
     assert.ok(nodes.some(n => texts(n).includes('最近收益')))
     assert.ok(nodes.some(n => texts(n).includes(value === null ? '待同步' : model.formatAmount(value,true))))
     for (const node of nodes) {
       assert.equal(typeof node.props.foregroundStyle,'string')
-      assert.ok(contrast(node.props.foregroundStyle,'#FFFFFF') >= 4.5, texts(node).join(' '))
+      for (const background of backgrounds) assert.ok(contrast(node.props.foregroundStyle,background) >= 4.5, texts(node).join(' '))
     }
     if (value && value !== '0') {
       const amount = nodes.find(n => texts(n).includes(model.formatAmount(value,true)))

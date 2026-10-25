@@ -12,19 +12,19 @@ export function usesTransparentBackground(context: unknown): boolean {
   const flags = object(context)
   return flags.isTransparentMode === true || flags.isBlurMode === true || flags.isTransparentBackground === true
 }
-function colors(transparent: boolean) {
+function colors(transparent: boolean, blueBackground = false) {
   return {
     text: transparent ? { light: palette.ink, dark: "#F3F8FE" } as const : palette.ink,
-    secondary: transparent ? { light: palette.muted, dark: "#D4E5F5" } as const : palette.muted,
-    accent: transparent ? { light: palette.accent, dark: "#A4D8FF" } as const : palette.accent,
-    loss: transparent ? { light: palette.loss, dark: "#FFB8C6" } as const : palette.loss,
-    line: transparent ? { light: palette.line, dark: "#9DD4FF" } as const : palette.line,
-  }
+    secondary: transparent ? { light: palette.muted, dark: "#D4E5F5" } as const : blueBackground ? "#3C566D" : palette.muted,
+    accent: transparent ? { light: palette.accent, dark: "#A4D8FF" } as const : blueBackground ? "#125B96" : palette.accent,
+    loss: transparent ? { light: palette.loss, dark: "#FFB8C6" } as const : blueBackground ? "#9E3148" : palette.loss,
+    line: transparent ? { light: palette.line, dark: "#9DD4FF" } as const : blueBackground ? "#1F77B6" : palette.line,
+  } as const
 }
-export function ProfitTrend({ snapshot, small = false, transparent = false, height, now = Date.now() }: {
-  snapshot: Snapshot; small?: boolean; transparent?: boolean; height?: number; now?: number
+export function ProfitTrend({ snapshot, small = false, transparent = false, blueBackground = false, height, now = Date.now() }: {
+  snapshot: Snapshot; small?: boolean; transparent?: boolean; blueBackground?: boolean; height?: number; now?: number
 }) {
-  const theme = colors(transparent)
+  const theme = colors(transparent, blueBackground)
   const series = trendSeries(snapshot.history, now)
   const window = historyWindow(now)
   const frame = height != null ? { maxWidth: "infinity" as const, height }
@@ -53,16 +53,18 @@ export function ProfitTrend({ snapshot, small = false, transparent = false, heig
 export function WalletCard({ snapshot, small = false, url, transparent = false, now = Date.now() }: {
   snapshot: Snapshot; small?: boolean; url?: string; transparent?: boolean; now?: number
 }) {
-  const theme = colors(transparent)
+  const theme = colors(transparent, true)
   const hasProfit = snapshot.profit.value !== null
   const hasBalance = showBalance(snapshot)
   const amountColor = !hasProfit || snapshot.profit.value === "0" ? theme.text
     : snapshot.profit.value!.startsWith("-") ? theme.loss : theme.accent
   return <VStack alignment="leading" spacing={small ? 7 : 9} padding={small ? 10 : 14}
-    widgetBackground={transparent ? undefined : "#FFFFFF"}
+    widgetBackground={transparent ? undefined : {
+      colors: ["#DBF1FF", "#B8DEFB"], startPoint: "topLeading", endPoint: "bottomTrailing",
+    }}
     widgetURL={url} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "leading" }}>
     <Text font={small ? 9 : 10} fontWeight="medium" foregroundStyle={theme.secondary}>近7天</Text>
-    <ProfitTrend snapshot={snapshot} small={small} transparent={transparent} now={now} />
+    <ProfitTrend snapshot={snapshot} small={small} transparent={transparent} blueBackground={!transparent} now={now} />
     <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
       <HStack spacing={4} frame={{ maxWidth: "infinity" }}>
         <Text font={small ? 9 : 10} foregroundStyle={theme.secondary}>最近收益</Text>

@@ -86,7 +86,7 @@ function Dashboard() {
             <Image systemName="square.grid.2x2" font={16} foregroundStyle={palette.accent} />
             <VStack alignment="leading" spacing={4}>
               <Text font={13} fontWeight="medium" foregroundStyle={palette.ink}>添加到桌面</Text>
-              <Text font={10} foregroundStyle={palette.muted}>小号 / 中号 · 白底 / 透明</Text>
+              <Text font={10} foregroundStyle={palette.muted}>小号 / 中号 · 蓝底 / 透明</Text>
             </VStack>
             <Spacer />
             <Image systemName="chevron.right" font={10} foregroundStyle={palette.muted} />
