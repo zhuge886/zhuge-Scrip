@@ -6,6 +6,6 @@ npm ci --ignore-scripts
 npm run check
 ```
 
-固定 TypeScript 与宿主声明。52 项合成数据测试模拟网络、Keychain、WebView 与界面节点，覆盖扫码续期、按日累计7天历史、缓存迁移、账号隔离、并发合并、无数字平滑曲线、单点与空记录，以及浅天蓝渐变两端的文字对比度、去除游戏名 / 币种标签和透明模式。类型目录和 node_modules 不提交。
+55 项合成数据测试覆盖查询、续期、7天历史与独立桌面视图；执行实际 widget.tsx 入口的模拟回归，核对内容树的蓝色底层、单日紧凑布局、显式透明参数及 Widget.preview 调用。
 
-测试与布局预览不能替代 iPhone 上的原生 Chart、真实续期和桌面验收。见 [验证记录](../../delta-force-widget/VERIFICATION.md)。
+节点和模拟入口检查不等同于 iPhone 原生渲染验证。手机请用应用内“预览桌面组件”核对实际结果。见 [验证记录](../../delta-force-widget/VERIFICATION.md)。

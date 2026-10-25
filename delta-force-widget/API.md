@@ -77,3 +77,16 @@ Snapshot 升级到 version 3，新增 history: [{day, value}]；继续使用原 
 ## 1.5.1 小组件蓝底
 
 普通小组件的 widgetBackground 改为 #DBF1FF → #B8DEFB 浅天蓝渐变，与应用摘要主卡一致。文字、正 / 负金额与曲线使用加深配色，测试覆盖渐变两个端点的文字对比度。透明、模糊及图片透明模式继续省略底板，应用白色趋势区不受影响。接口、历史及续期逻辑未变。
+
+## 1.5.2 桌面渲染与原生预览
+
+用户截图显示 1.5.1 的蓝底没有出现在桌面。公开 [Widget 文档](https://github.com/Honye/scripting-scripts/blob/909bd07dd214be3758f5302013bf847270802d86/documentation/widget_api/zh.md) 说明 widgetBackground 在透明、模糊、图片透明、accessory 和 accented 等情况下可能被跳过。云端不能确认该手机上具体是背景被跳过、旧脚本绑定还是时间线未更新。
+
+本次同时修改实际 widget.tsx 入口及其独立 widget-view.tsx：
+- 默认蓝底不依赖透明 / 模糊标志；只有明确参数 transparent 或 {"background":"transparent"} 才开启透明。
+- 根视图按 Widget.displaySize 定尺寸，背景设置为纯蓝回退，内容树另绘 Rectangle + gradient("linear")，避免只改背景修饰符。
+- 历史少于两天时收起 Chart，保留金额、日期及记录天数，不再画一个孤点占据整个图表区。
+- 应用中的“预览桌面组件”调用 Widget.preview，以明确的蓝色参数运行实际桌面入口，并显示当前样式版本 1.5.2，供手机确认渲染和桌面绑定。
+- 更新后若桌面仍显示旧的“近7天”白底布局，应重新选择更新后的脚本；应用内提供添加与更新说明。
+
+接口、续期、历史累计及账号缓存没有改变。

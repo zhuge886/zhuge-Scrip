@@ -7,10 +7,12 @@ const { test, beforeEach } = require('node:test')
 const ts = require('typescript')
 const root = path.resolve(__dirname, '../../delta-force-widget')
 let transport, storage, keychain, views
+const nativeWidget = {}
 const original = Module._load
-const elements = Object.fromEntries(['VStack', 'HStack', 'Text', 'Spacer', 'Image', 'Chart', 'LineChart', 'AreaChart'].map(name => [name, name]))
+const elements = Object.fromEntries(['VStack', 'HStack', 'Text', 'Spacer', 'Image', 'Chart', 'LineChart', 'AreaChart', 'ZStack', 'Rectangle'].map(name => [name, name]))
 Module._load = function(name, ...args) {
-  if (name === 'scripting') return { ...elements, fetch: (...args) => transport(...args) }
+  if (name === 'scripting') return { ...elements, fetch: (...args) => transport(...args), Widget: nativeWidget,
+    gradient: (_type, value) => value, Script: { name: '三角洲收益', createRunURLScheme: () => 'scripting://synthetic' } }
   return original.call(this, name, ...args)
 }
 global.__deltaJSX = (type, props, ...children) => {
@@ -29,7 +31,7 @@ const store = require(path.join(root, 'store.ts'))
 const api = require(path.join(root, 'api.ts'))
 const auth = require(path.join(root, 'auth.ts'))
 const renewal = require(path.join(root, 'renew.ts'))
-const ui = require(path.join(root, 'ui.tsx'))
+const widgetUI = require(path.join(root, 'widget-view.tsx'))
 const history = require(path.join(root, 'history.ts'))
 const now = Date.parse('2026-10-23T04:00:00Z')
 const session = { acctype: 'wx', appid: model.WX_PC_APP, openid: 'synthetic_openid_A', access_token: 'synthetic_token_A' }
@@ -65,6 +67,9 @@ function texts(node) {
 async function seed() { store.saveSession(session); return api.refreshSnapshot(true, now) }
 beforeEach(() => {
   storage = new Map(); keychain = new Map(); views = []; transport = success
+  for (const key of Object.keys(nativeWidget)) delete nativeWidget[key]
+  Object.assign(nativeWidget,{ family:'systemSmall', displaySize:{width:158,height:158}, parameter:'',
+    reloadAll() {}, preview:async()=>{}, present(){} })
   global.Storage = { get: k => structuredClone(storage.get(k) ?? null), set: (k, v) => { storage.set(k, structuredClone(v)); return true }, remove: k => storage.delete(k) }
   global.Keychain = { get: k => keychain.get(k) ?? null, set: (k, v) => { keychain.set(k, v); return true }, remove: k => { keychain.delete(k); return true }, contains: k => keychain.has(k) }
   mockWeb()
@@ -300,18 +305,18 @@ test('small and medium widgets show dated income and omit unavailable balance en
   for (const small of [true, false]) {
     for (const status of ['missing', 'cached', 'error']) {
       const missing = { ...snapshot, balance: { ...snapshot.balance, status } }
-      const labels = texts(ui.WalletCard({ snapshot: missing, small }))
+      const labels = texts(widgetUI.WidgetCard({ snapshot: missing, small }))
       assert.ok(labels.includes('+5,285,832'))
       assert.ok(labels.includes('2026.10.21'))
       assert.ok(!labels.includes('余额'))
       assert.ok(!labels.join(' ').includes('昨日'))
     }
     const zeroBalance = { ...snapshot, balance: { ...snapshot.balance, value: '0' } }
-    assert.ok(texts(ui.WalletCard({ snapshot: zeroBalance, small })).includes('余额'))
+    assert.ok(texts(widgetUI.WidgetCard({ snapshot: zeroBalance, small })).includes('余额'))
   }
 })
 test('empty widgets never invent an income amount or report date', () => {
-  const labels = texts(ui.WalletCard({ snapshot: model.emptySnapshot(), small: true }))
+  const labels = texts(widgetUI.WidgetCard({ snapshot: model.emptySnapshot(), small: true }))
   assert.ok(labels.includes('待同步'))
   assert.ok(labels.includes('暂无记录'))
   assert.ok(!labels.includes('余额'))
@@ -493,7 +498,7 @@ test('transparent widget content has no background, icons, update footer or logi
     visit(node.props.children)
   }
   for (const small of [true,false]) {
-    const card = ui.WalletCard({ snapshot: { ...snapshot, needsLogin: true }, small, transparent: true })
+    const card = widgetUI.WidgetCard({ snapshot: { ...snapshot, needsLogin: true }, small, transparent: true })
     visit(card)
     assert.ok(!texts(card).join(' ').match(/登录|更新于|上次同步|扫码|最近一份/))
     assert.ok(texts(card).includes('+5,285,832'))
@@ -516,8 +521,9 @@ function contrast(first, second) {
 test('ordinary widgets remain readable across the blue gradient for positive, negative, zero and missing income', async () => {
   const original = await seed()
   for (const small of [true,false]) for (const value of ['5285832','-1814421','0',null]) {
-    const card = ui.WalletCard({snapshot:{...original,profit:{...original.profit,value}},small})
-    const backgrounds = card.props.widgetBackground.colors
+    const card = widgetUI.WidgetCard({snapshot:{...original,profit:{...original.profit,value}},small})
+    assert.equal(card.props.background,'#A6D9FF')
+    const backgrounds = nodesOfType(card,'Rectangle')[0].props.fill.colors
     assert.ok(backgrounds.length>=2)
     assert.ok(backgrounds.every(color=>parseInt(color.slice(5,7),16)>parseInt(color.slice(1,3),16)))
     const nodes = textNodes(card)
@@ -534,20 +540,24 @@ test('ordinary widgets remain readable across the blue gradient for positive, ne
     }
   }
 })
-test('native transparent, native blur and wallpaper-image modes all suppress the white fill', async () => {
+test('blue is the default and transparency requires an explicit parameter', async () => {
   const snapshot = await seed()
-  for (const flags of [{isTransparentMode:true},{isBlurMode:true},{isTransparentBackground:true}]) {
-    assert.equal(ui.usesTransparentBackground(flags),true)
-    assert.equal(ui.WalletCard({snapshot,transparent:ui.usesTransparentBackground(flags)}).props.widgetBackground,undefined)
+  for (const parameter of [undefined,null,'','blue','{}','{"background":"blue"}',{isTransparentMode:true}]) {
+    assert.equal(widgetUI.transparentParameter(parameter),false)
+    assert.equal(nodesOfType(widgetUI.WidgetCard({snapshot}),'Rectangle').length,1)
   }
-  for (const flags of [undefined,null,{}, {isTransparentMode:false,isBlurMode:false,isTransparentBackground:false}]) {
-    assert.equal(ui.usesTransparentBackground(flags),false)
+  for (const parameter of ['transparent',' TRANSPARENT ','{"background":"transparent"}']) {
+    assert.equal(widgetUI.transparentParameter(parameter),true)
+    const card = widgetUI.WidgetCard({snapshot,transparent:true})
+    assert.equal(card.props.background,undefined)
+    assert.equal(card.props.widgetBackground,undefined)
+    assert.equal(nodesOfType(card,'Rectangle').length,0)
   }
 })
 test('transparent text and income adapt to both light and dark appearance', async () => {
   const original = await seed()
   for (const value of ['5285832','-1814421','0']) {
-    const card = ui.WalletCard({snapshot:{...original,profit:{...original.profit,value}},transparent:true})
+    const card = widgetUI.WidgetCard({snapshot:{...original,profit:{...original.profit,value}},transparent:true})
     for (const node of textNodes(card)) {
       const style = node.props.foregroundStyle
       assert.ok(contrast(style.light,'#FFFFFF') >= 4.5)
@@ -637,7 +647,7 @@ test('stock card draws only real dated marks, hides numeric axes and puts latest
   const snapshot = await seed()
   snapshot.history = [{day:'2026-10-20',value:'1200'},{day:'2026-10-21',value:'5285832'}]
   for (const small of [true,false]) {
-    const card = ui.WalletCard({snapshot,small,now})
+    const card = widgetUI.WidgetCard({snapshot,small,now})
     const chart = nodesOfType(card,'Chart')[0]
     const line = nodesOfType(card,'LineChart')[0]
     assert.equal(chart.props.chartXAxis,'hidden')
@@ -647,21 +657,24 @@ test('stock card draws only real dated marks, hides numeric axes and puts latest
     assert.ok(line.props.marks.every(mark=>mark.annotation===undefined && mark.interpolationMethod==='monotone'))
     assert.equal(line.props.marks.filter(mark=>mark.symbol==='circle').length,1)
     assert.ok(!texts(card).join(' ').match(/三角洲行动|哈夫币|哈弗币/))
-    const rootChildren = card.props.children.flat().filter(Boolean)
+    const content = card.props.children.flat().find(node=>node?.type==='VStack')
+    const rootChildren = content.props.children.flat().filter(Boolean)
+    assert.ok(rootChildren.indexOf(chart)>=0)
     assert.ok(rootChildren.indexOf(chart)<rootChildren.findIndex(n=>texts(n).includes('+5,285,832')))
     assert.ok(texts(card).includes('2026.10.21'))
     assert.ok(!texts(card).includes('1200'))
   }
 })
-test('one report draws one point while an empty week draws no invented trend', async () => {
+test('a single report collapses the chart area instead of floating a lone dot', async () => {
   const snapshot = await seed()
-  const card = ui.WalletCard({snapshot,now})
-  const marks = nodesOfType(card,'LineChart')[0].props.marks
-  assert.equal(marks.length,1)
-  assert.equal(marks[0].symbol,'circle')
-  const empty = ui.WalletCard({snapshot:{...snapshot,history:[]},now})
+  const card = widgetUI.WidgetCard({snapshot,now})
+  assert.equal(nodesOfType(card,'Chart').length,0)
+  assert.ok(texts(card).includes('1天记录'))
+  assert.ok(texts(card).includes('2026.10.21'))
+  assert.ok(texts(card).includes('+5,285,832'))
+  const empty = widgetUI.WidgetCard({snapshot:{...snapshot,history:[]},now})
   assert.equal(nodesOfType(empty,'Chart').length,0)
-  assert.ok(texts(empty).includes('等待收益记录'))
+  assert.ok(texts(empty).includes('0天记录'))
   assert.ok(texts(empty).includes('+5,285,832'))
 })
 test('overlapping widget and foreground queries merge history without reverting the latest day', async () => {
@@ -685,4 +698,41 @@ test('rescanning the same account preserves its seven-day history', async () => 
   const restored = store.loadSnapshot(signedIn,now)
   assert.deepEqual(restored.history,[{day:'2026-10-21',value:'5285832'}])
   assert.equal(restored.profit.value,'5285832')
+})
+
+test('a real widget entry paints blue content even when old transparent flags are enabled',{timeout:2000},async()=>{
+  await seed()
+  nativeWidget.isTransparentMode=true
+  nativeWidget.isTransparentBackground=true
+  const shown=new Promise(resolve=>{nativeWidget.present=node=>resolve(node)})
+  const entry=path.join(root,'widget.tsx')
+  delete require.cache[require.resolve(entry)]
+  require(entry)
+  const card=await shown
+  assert.equal(card.type,'ZStack')
+  assert.equal(card.props.frame.width,158)
+  assert.equal(card.props.frame.height,158)
+  assert.equal(card.props.background,'#A6D9FF')
+  assert.equal(nodesOfType(card,'Rectangle').length,1)
+  assert.ok(texts(card).includes('7日收益'))
+  assert.ok(!texts(card).includes('近7天'))
+})
+test('the blue shape remains present when host background modifiers are stripped',async()=>{
+  const snapshot=await seed()
+  const card=widgetUI.WidgetCard({snapshot,now})
+  delete card.props.background
+  delete card.props.widgetBackground
+  const shape=nodesOfType(card,'Rectangle')[0]
+  assert.ok(shape.props.ignoresSafeArea)
+  assert.deepEqual(shape.props.fill.colors,['#8CCBFA','#C5E8FF'])
+})
+test('the app preview uses native Widget.preview with an explicit blue parameter',async()=>{
+  const calls=[]
+  nativeWidget.reloadAll=()=>calls.push('reload')
+  nativeWidget.preview=async options=>calls.push(options)
+  await widgetUI.previewBlueWidget()
+  assert.equal(calls[0],'reload')
+  assert.equal(calls[1].family,'systemSmall')
+  const config=calls[1].parameters
+  assert.equal(JSON.parse(config.options[config.default]).background,'blue')
 })

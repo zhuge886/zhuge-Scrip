@@ -1,6 +1,6 @@
 import { VStack, HStack, Text, Spacer, Chart, LineChart, AreaChart } from "scripting"
 import type { DynamicShapeStyle, ShapeStyle } from "scripting"
-import { formatAmount, object, reportDate, showBalance, Snapshot } from "./model"
+import { formatAmount, reportDate, showBalance, Snapshot } from "./model"
 import { historyWindow, trendSeries } from "./history"
 
 export const palette = {
@@ -8,10 +8,6 @@ export const palette = {
   soft: "#EDF6FE", panel: "#F7FAFD", border: "#E8EFF5", page: "#FFFFFF", loss: "#B44557",
 } as const
 
-export function usesTransparentBackground(context: unknown): boolean {
-  const flags = object(context)
-  return flags.isTransparentMode === true || flags.isBlurMode === true || flags.isTransparentBackground === true
-}
 function colors(transparent: boolean, blueBackground = false) {
   return {
     text: transparent ? { light: palette.ink, dark: "#F3F8FE" } as const : palette.ink,
@@ -49,40 +45,6 @@ export function ProfitTrend({ snapshot, small = false, transparent = false, blue
       lineStyle: { lineWidth: small ? 1.35 : 1.6, lineCap: "round", lineJoin: "round" },
     }))} />
   </Chart>
-}
-export function WalletCard({ snapshot, small = false, url, transparent = false, now = Date.now() }: {
-  snapshot: Snapshot; small?: boolean; url?: string; transparent?: boolean; now?: number
-}) {
-  const theme = colors(transparent, true)
-  const hasProfit = snapshot.profit.value !== null
-  const hasBalance = showBalance(snapshot)
-  const amountColor = !hasProfit || snapshot.profit.value === "0" ? theme.text
-    : snapshot.profit.value!.startsWith("-") ? theme.loss : theme.accent
-  return <VStack alignment="leading" spacing={small ? 7 : 9} padding={small ? 10 : 14}
-    widgetBackground={transparent ? undefined : {
-      colors: ["#DBF1FF", "#B8DEFB"], startPoint: "topLeading", endPoint: "bottomTrailing",
-    }}
-    widgetURL={url} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "leading" }}>
-    <Text font={small ? 9 : 10} fontWeight="medium" foregroundStyle={theme.secondary}>近7天</Text>
-    <ProfitTrend snapshot={snapshot} small={small} transparent={transparent} blueBackground={!transparent} now={now} />
-    <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-      <HStack spacing={4} frame={{ maxWidth: "infinity" }}>
-        <Text font={small ? 9 : 10} foregroundStyle={theme.secondary}>最近收益</Text>
-        <Spacer minLength={0} />
-        <Text font={small ? 8 : 10} foregroundStyle={theme.secondary} lineLimit={1}>{reportDate(snapshot.day)}</Text>
-      </HStack>
-      <Text font={small ? 27 : 33} fontWeight="semibold" monospacedDigit kerning={-0.5} foregroundStyle={amountColor}
-        frame={{ maxWidth: "infinity", alignment: "leading" }} lineLimit={1} minScaleFactor={0.4}>
-        {hasProfit ? formatAmount(snapshot.profit.value, true) : "待同步"}
-      </Text>
-    </VStack>
-    {hasBalance ? <HStack spacing={6} frame={{ maxWidth: "infinity" }}>
-      <Text font={small ? 8 : 10} foregroundStyle={theme.secondary}>余额</Text>
-      <Spacer minLength={0} />
-      <Text font={small ? 10 : 12} monospacedDigit foregroundStyle={theme.text}
-        lineLimit={1} minScaleFactor={0.5}>{formatAmount(snapshot.balance.value)}</Text>
-    </HStack> : null}
-  </VStack>
 }
 export function IncomeSummary({ snapshot }: { snapshot: Snapshot }) {
   return <VStack alignment="leading" spacing={13} padding={20}

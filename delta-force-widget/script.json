@@ -1,9 +1,9 @@
 {
   "name": "三角洲收益",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "icon": "chart.line.uptrend.xyaxis",
   "color": "blue",
-  "description": "浅天蓝渐变小组件，平滑7天曲线与最近收益、日期，支持微信续期。",
+  "description": "独立蓝色桌面卡片，单日记录紧凑展示，多日显示7天曲线；含Scripting原生组件预览。",
   "localizedNames": {
     "zh": "三角洲收益"
   },
