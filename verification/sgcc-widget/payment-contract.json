@@ -106,6 +106,21 @@
     "Whether the existing App login token is sufficient for the SDK TOKEN fields and bootstrap",
     "Whether the actual server response returns a complete matching household and province",
     "Any additional official verification, confirmation or initialization requirements",
-    "Actual iPhone runtime and amount agreement with the official App"
-  ]
+    "Actual iPhone runtime and amount agreement with the official App",
+    "Complete SDK gateway mapping and session/header initialization"
+  ],
+  "additionalGatewayEvidence": {
+    "sdkInitMethod": "ThreeAppConfigUtils.setPayLiteHelper",
+    "defaultNewGate1": "https://csc-service.sgcc.com.cn:28002",
+    "singleQueryOriginSource": "La/d.c uses SdkCoreHelper.getURL; final native initialization mapping not fully established",
+    "additionalInterceptor": "La/d$a.intercept",
+    "headers": [
+      "h",
+      "y",
+      "deviceInfo",
+      "sessionId",
+      "t"
+    ],
+    "runtimeChange": "No speculative origin/header switch; current implementation still uses original App gateway"
+  }
 }

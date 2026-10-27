@@ -26,9 +26,11 @@ import {
   clearCache,
   clearResolution,
   clearMetadata,
+  clearQueryDiagnostic,
   getPassword,
   loadPreference,
   loadMetadata,
+  loadQueryDiagnostic,
   savePreference,
   setPassword
 } from '../store'
@@ -84,6 +86,7 @@ export function Settings() {
   const [result, setResult] = useState<DataResult | null>(null)
   const [advanced, setAdvanced] = useState(false)
   const [queryStatus, setQueryStatus] = useState('')
+  const [diagnostic, setDiagnostic] = useState(() => loadQueryDiagnostic())
   const operation = useRef<{ cancelled: boolean } | null>(null)
   const companies = organizationsFor(preference.provinceCode)
 
@@ -110,6 +113,8 @@ export function Settings() {
       clearResolution()
       setResult(null)
       setQueryStatus('')
+      clearQueryDiagnostic()
+      setDiagnostic('')
     }
     setPreference((prev) => ({ ...prev, ...patch }))
   }
@@ -143,6 +148,8 @@ export function Settings() {
     operation.current = running
     setRefreshing(true)
     setQueryStatus('准备查询…')
+    clearQueryDiagnostic()
+    setDiagnostic('')
     try {
       savePreference(preference)
       setPassword(password)
@@ -165,6 +172,7 @@ export function Settings() {
       setQueryStatus(errorMessage(e))
       await Dialog.alert({ title: '刷新失败', message: errorMessage(e) })
     } finally {
+      if (!running.cancelled) setDiagnostic(loadQueryDiagnostic())
       operation.current = null
       setRefreshing(false)
     }
@@ -321,6 +329,10 @@ export function Settings() {
           </Button>
           {refreshing ? <Button title="停止查询" action={() => { if (operation.current) operation.current.cancelled = true; setQueryStatus('正在停止，等待当前请求结束…') }} /> : null}
           {queryStatus ? <Text foregroundStyle="secondaryLabel">{queryStatus}</Text> : null}
+          {diagnostic ? <Button title="复制查询诊断" action={async () => {
+            await Pasteboard.setString(diagnostic)
+            await Dialog.alert({ title: '诊断已复制', message: '仅包含版本、状态码和字段类型，不包含户号、手机号、验证码、登录凭证或金额。可将文本用于排查。' })
+          }} /> : null}
           <Button title="清除数据缓存" role="destructive" action={onClearCache} />
         </Section>
 

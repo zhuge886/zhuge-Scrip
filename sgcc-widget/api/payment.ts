@@ -1,5 +1,7 @@
 import type { PowerAccount } from '../accounts'
 import type { RawAccount } from '../data'
+import { saveQueryDiagnostic } from '../store'
+import { diagnosticCode, paymentDiagnostic } from './diagnostics'
 
 /** Official Android 3.2.3: IService.queryEleInfoSingle, SingleElecIndexPresenter. */
 export const PAYMENT_QUERY_PATH = 'emss-eaa-payelec-front/member/p1/f04'
@@ -48,11 +50,25 @@ export function fenToYuan(value: unknown): number | null {
 export function parsePaymentBalance(envelope: unknown, account: PowerAccount): RawAccount {
   const outer = object(envelope), result = object(outer?.data), common = object(result?.common)
   const topCode = text(outer?.code)
+  const gateway = object(result?.srvrt), gatewayCode = text(gateway?.resultCode)
+  const code = text(common?.repcd)
+  const message = paymentErrorMessage(common?.repmsg || gateway?.resultMessage || outer?.message)
+  // Gateways may return an error with no SDK data/common envelope at all.
+  // Inspect known error statuses before requiring the successful amount schema.
+  if (gatewayCode && gatewayCode !== '0000') {
+    fail(`payment_gateway_${diagnosticCode(gatewayCode)}`, `交费网关未完成查询（${paymentErrorMessage(gatewayCode)}）：${message || '服务端拒绝了本次请求'}`)
+  }
+  if (['-200', '-201'].includes(topCode) ||
+      topCode && !['0', '1'].includes(topCode) && code !== 'MCA00000') {
+    fail(`payment_${diagnosticCode(topCode)}`, `交费服务未完成查询（${paymentErrorMessage(topCode)}）：${message || '服务端未返回错误说明'}`)
+  }
+  if (common && typeof common.repcd === 'string' && code && code !== 'MCA00000') {
+    fail(`payment_${diagnosticCode(code)}`, `交费查询未完成（${paymentErrorMessage(code)}）：${message || '请在官方 App 检查交费查询状态'}`)
+  }
   if (!outer || !Object.prototype.hasOwnProperty.call(outer, 'code') ||
       outer.code == null || !result || !common || typeof common.repcd !== 'string') {
-    fail('payment_response', '交费查询未返回业务状态，未保存本次结果')
+    fail('payment_response', `交费响应结构不兼容，未保存本次结果。${message ? `服务端说明：${message}。` : ''}请点「复制查询诊断」反馈`)
   }
-  const code = text(common.repcd), message = paymentErrorMessage(common.repmsg || outer.message)
   // EleUtils.objectSuccess accepts MCA00000 or outer code 0; never accept a business error.
   if (['-200', '-201'].includes(topCode) ||
       (code !== 'MCA00000' && !(topCode === '0' && code === ''))) {
@@ -95,12 +111,17 @@ export function parsePaymentBalance(envelope: unknown, account: PowerAccount): R
 export type PaymentApp = { sess?: { token?: string }; authed: (path: string, payload: () => unknown, options: { raw: true }) => Promise<unknown> }
 
 export async function queryPaymentBalance(app: PaymentApp, account: PowerAccount): Promise<RawAccount> {
+  let response: unknown
   try {
     // Rebuild after ensure/re-login so the SDK body TOKEN matches the transport token.
-    return parsePaymentBalance(await app.authed(PAYMENT_QUERY_PATH,
-      () => paymentPayload(account, app.sess?.token || ''), { raw: true }), account)
+    response = await app.authed(PAYMENT_QUERY_PATH,
+      () => paymentPayload(account, app.sess?.token || ''), { raw: true })
+    const result = parsePaymentBalance(response, account)
+    saveQueryDiagnostic(paymentDiagnostic(response, 'success'))
+    return result
   } catch (error) {
     const e = error as { code?: unknown; message?: unknown }
+    saveQueryDiagnostic(paymentDiagnostic(response, 'error', e?.code))
     const message = paymentErrorMessage(e?.message || error)
     throw Object.assign(new Error(`其他户号交费查询失败：${message}`), { code: e?.code || 'payment_query' })
   }

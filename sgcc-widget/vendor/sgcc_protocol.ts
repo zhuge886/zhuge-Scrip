@@ -424,7 +424,8 @@ class SgApp {
       try {
         if (raw) {
           // Payment SDK uses ObjectApiResponse (code 0 / MCA00000), unlike the balance API.
-          const code = String(resp.code == null ? '' : resp.code);
+          const gatewayCode = resp.data && resp.data.srvrt && resp.data.srvrt.resultCode;
+          const code = String(['-200', '-201'].includes(String(gatewayCode)) ? gatewayCode : resp.code == null ? '' : resp.code);
           if (['-200', '-201'].includes(code)) throw new SgError(code, resp.message);
           return resp;
         }

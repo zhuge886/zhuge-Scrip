@@ -3,7 +3,7 @@
   "icon": "bolt.fill",
   "iconImage": null,
   "color": "rgba(0,112,107,1)",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "entry": "index.tsx",
   "runInApp": false,
   "description": null,
@@ -21,7 +21,7 @@
   },
   "localizedDescriptions": {
     "en": "State Grid electricity balance, usage and tier progress widget.",
-    "zh": "新增其他户号交费金额查询，区分电费余额、表内余额和应缴电费；首次未绑定户号查询待真机验证。"
+    "zh": "修复交费服务错误被误报为缺少业务状态，增加可复制的脱敏查询诊断；未绑定户号查询链路仍待实测完善。"
   },
   "intentInputTypes": []
 }

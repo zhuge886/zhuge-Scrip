@@ -71,6 +71,20 @@ const KEY_DATA = 'data'
 const KEY_PASSWORD = `${KEYCHAIN_PREFIX}password`
 const KEY_RESOLUTION = 'resolved-account-v2'
 const KEY_METADATA = 'official-account-metadata-v1'
+const KEY_QUERY_DIAGNOSTIC = 'payment-query-diagnostic-v1'
+
+/** Only api/diagnostics' field types and status codes, never a response dump. */
+export function saveQueryDiagnostic(report: string) {
+  try { Storage.set(KEY_QUERY_DIAGNOSTIC, report) } catch { /* Diagnostics never block a query. */ }
+}
+
+export function loadQueryDiagnostic(): string {
+  try { return Storage.get<string>(KEY_QUERY_DIAGNOSTIC) ?? '' } catch { return '' }
+}
+
+export function clearQueryDiagnostic() {
+  try { Storage.remove(KEY_QUERY_DIAGNOSTIC) } catch { /* Optional diagnostic only. */ }
+}
 
 export function loadPreference(): Preference {
   const stored = Storage.get<Partial<Preference>>(KEY_PREFERENCE) ?? {}

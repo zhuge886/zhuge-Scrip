@@ -1,0 +1,17 @@
+{
+  "scope": "Two anonymous read-only refresh requests with empty household and empty login token; no user account or household query",
+  "method": "POST",
+  "path": "emss-eaa-payelec-front/member/p1/f04",
+  "tlsVerification": true,
+  "observations": [
+    {
+      "origin": "https://csc-service.sgcc.com.cn:28630",
+      "decryptedResponse": {"code": 101001, "message": "系统正忙,请稍候片刻再操作。[错误码:S1001]"}
+    },
+    {
+      "origin": "https://csc-service.sgcc.com.cn:28002",
+      "decryptedResponse": {"code": 101001, "message": "系统处理繁忙,请您稍后再试101001"}
+    }
+  ],
+  "conclusion": "An explicit gateway error can have no data/common/repcd. These observations do not identify the user's actual server code, prove which SDK bootstrap is required, or establish authenticated query success."
+}

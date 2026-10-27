@@ -92,7 +92,7 @@ module.exports = async ({ check, runtime, configure, mockSession, account, textO
     const { parsePaymentBalance } = runtime().load('api/payment')
     assert.throws(() => parsePaymentBalance(response({}, 'AUTH_EXPIRED'), account()), (e) => e.code === 'payment_AUTH_EXPIRED')
     for (const value of [null, {}, { data: response().data }, { common: {} }, { code: 0, data: { common: { repcd: 'MCA00000' }, data: [response().data.data] } }]) {
-      assert.throws(() => parsePaymentBalance(value, account()), /状态|资料/)
+      assert.throws(() => parsePaymentBalance(value, account()), /状态|资料|结构/)
     }
   })
   await check('ObjectApiResponse success uses the payment SDK status rather than the old balance checker', () => {
@@ -102,7 +102,7 @@ module.exports = async ({ check, runtime, configure, mockSession, account, textO
     const alternate = response(); alternate.code = 1
     assert.equal(parsePaymentBalance(alternate, account()).eleBill.sumMoney, 123.45)
     for (const value of [response({}, '000000'), response({}, null), { ...response({}, ''), code: 1 }, { ...response(), code: -200 }]) {
-      assert.throws(() => parsePaymentBalance(value, account()), /状态|未完成/)
+      assert.throws(() => parsePaymentBalance(value, account()), /状态|未完成|结构/)
     }
     assert.throws(() => r.load('vendor/sgcc_protocol').SgApp.check(response()))
   })
@@ -178,6 +178,85 @@ module.exports = async ({ check, runtime, configure, mockSession, account, textO
     vendor.SgApp.prototype.authed = async (path) => { calls.push(path); throw new Error('户号未绑定') }
     await assert.rejects(r.load('api/client').getData({ force: true, discover: true }), (e) => e.code === 'bound_channel_required' && /其他户号交费/.test(e.message))
     assert.equal(calls.length, 1)
+  })
+  await check('observed anonymous gateway errors preserve their actual status and message without requiring common', () => {
+    const fixtures = require('./payment-gateway-errors.json')
+    const { parsePaymentBalance } = runtime().load('api/payment')
+    for (const row of fixtures.observations) assert.throws(() => parsePaymentBalance(row.decryptedResponse, account()), (e) =>
+      e.code === 'payment_101001' && /101001/.test(e.message) && /系统/.test(e.message) && !/未返回业务状态/.test(e.message))
+  })
+  await check('gateway business errors are reported before enforcing the SDK success schema', () => {
+    const { parsePaymentBalance } = runtime().load('api/payment')
+    assert.throws(() => parsePaymentBalance({ code: 1, data: { srvrt: { resultCode: 'RK006', resultMessage: '需要安全验证' } } }, account()), (e) =>
+      e.code === 'payment_gateway_RK006' && /需要安全验证/.test(e.message))
+  })
+  await check('unknown success-shaped envelopes remain failures with useful server text and diagnostic guidance', () => {
+    const { parsePaymentBalance } = runtime().load('api/payment')
+    for (const value of [{ code: 0, message: 'upstream-shape-change', data: response().data.data }, { code: 1, data: { srvrt: { resultCode: '0000' }, bizrt: response().data } }]) {
+      assert.throws(() => parsePaymentBalance(value, account()), (e) => e.code === 'payment_response' && /复制查询诊断/.test(e.message))
+    }
+  })
+  await check('diagnostic records fixed field types and status codes without arbitrary keys or personal values', () => {
+    const r = runtime(), { paymentDiagnostic } = r.load('api/diagnostics')
+    const value = response({ POWER_USER_NAME: 'private-name', POWER_USER_ADDR: 'private-address', TOKEN: 'short-secret' })
+    value.message = 'private-name 0001234567 13800000000'; value['private-dynamic-key'] = 'short-secret'
+    value.data.bizrt = { TOKEN: 'short-secret' }
+    const report = paymentDiagnostic(value, 'error', 'payment_response'), parsed = JSON.parse(report)
+    assert.equal(parsed.statuses.top, '0'); assert.equal(parsed.statuses.business, 'MCA00000')
+    assert.equal(parsed.statuses.error, 'payment_response'); assert.equal(parsed.schema['data.common'], 'object')
+    assert.doesNotMatch(report, /private-name|private-address|private-dynamic-key|0001234567|13800000000|short-secret|opaque-payment-id|12345/)
+  })
+  await check('diagnostic status filters hide long identifiers, arbitrary objects and token-like codes', () => {
+    const { paymentDiagnostic } = runtime().load('api/diagnostics')
+    for (const code of ['0001234567', 'abcdefghijklmnopqrstuvwxyz123456', { token: 'secret' }]) {
+      const report = paymentDiagnostic({ code, data: { common: { repcd: code } } }, 'error', code)
+      assert.doesNotMatch(report, /0001234567|abcdefghijklmnopqrstuvwxyz123456|secret/)
+    }
+  })
+  await check('failed payment calls save a shareable diagnostic while leaving balance and resolution empty', async () => {
+    const r = runtime(), { store, vendor } = setup(r)
+    vendor.SgApp.prototype.authed = async () => ({ code: 101001, message: '系统正忙 S1001' })
+    await assert.rejects(r.load('api/client').getData({ force: true, discover: true }), /101001.*系统正忙/)
+    const report = JSON.parse(store.loadQueryDiagnostic())
+    assert.equal(report.statuses.top, '101001'); assert.equal(report.statuses.error, 'payment_101001')
+    assert.equal(report.schema['root.data'], 'undefined'); assert.equal(report.outcome, 'error')
+    assert.equal(store.loadCache(), null); assert.equal(store.loadResolution(), null)
+  })
+  await check('transport failures produce a safe diagnostic without storing the error text or credentials', async () => {
+    const r = runtime(), { store, vendor } = setup(r)
+    vendor.SgApp.prototype.authed = async () => { throw Object.assign(new Error('network 13800000000 private-name short-token'), { code: 'net' }) }
+    await assert.rejects(r.load('api/client').getData({ force: true, discover: true }))
+    const report = store.loadQueryDiagnostic()
+    assert.equal(JSON.parse(report).statuses.error, 'net')
+    assert.doesNotMatch(report, /13800000000|private-name|short-token|0001234567/)
+    store.clearQueryDiagnostic(); assert.equal(store.loadQueryDiagnostic(), '')
+  })
+  await check('gateway session expiration renews transport and SDK body tokens once', async () => {
+    const r = runtime(), { SgApp } = r.load('vendor/sgcc_protocol'), app = new SgApp({}, '13800000000', 'test-only-password')
+    let session = 0; const tokens = []
+    app.ensure = async function () { this.sess = { token: `fixture-token-${++session}` }; return this.sess }
+    app.post = async (path, payload) => {
+      tokens.push(payload.data.data.TOKEN)
+      return tokens.length === 1 ? { code: 1, data: { srvrt: { resultCode: '-201', resultMessage: 'expired' } } } : response()
+    }
+    await r.load('api/payment').queryPaymentBalance(app, account())
+    assert.deepEqual(tokens, ['fixture-token-1','fixture-token-2'])
+    assert.equal(JSON.parse(r.load('store').loadQueryDiagnostic()).outcome, 'success')
+  })
+  await check('settings copies the stored safe diagnostic through the explicit copy button', async () => {
+    const r = runtime(), { store } = setup(r)
+    const report = r.load('api/diagnostics').paymentDiagnostic({ code: 101001 }, 'error', 'payment_101001')
+    store.saveQueryDiagnostic(report); let copied = ''
+    r.context.Pasteboard = { async setString(value) { copied = value } }
+    const view = r.load('views/Settings.tsx').Settings()
+    function find(node) {
+      if (!node || typeof node !== 'object') return null
+      if (node.props?.title === '复制查询诊断') return node
+      for (const child of Array.isArray(node) ? node : node.children ?? []) { const found = find(child); if (found) return found }
+      return null
+    }
+    const button = find(view); assert.ok(button)
+    await button.props.action(); assert.equal(copied, report)
   })
   for (const family of ['systemSmall','systemMedium','accessoryRectangular','accessoryCircular','accessoryInline']) {
     await check(`payment amount labels and fen conversion are retained in ${family}`, async () => {
