@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- |
 | 电量监控 | 1.1.1 | 中文电量界面、简洁桌面圆环与百分比、标准蓝牙配件按需读取 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget) | [查看说明](battery-widget/README.md) |
 | 三角洲收益 | 1.7.0 | 轻磨砂小中号布局、真实累计曲线与每日盈亏、明暗 / 透明主题 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
-| 网上国网·手动户号 | 1.5.2 | 兼容空 common 的交费成功响应，补充身份与金额字段诊断 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
+| 网上国网·手动户号 | 1.6.0 | 白底浅青弧纹余额卡、完整截止日期与精简设置；用户已实测余额查询 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
 
 ## 远程导入链接（点击代码块右上角即可复制）
 
@@ -49,7 +49,7 @@ https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget
 https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget
 ```
 
-更新到 **1.5.2**，根据实际诊断及官方 SDK 规则，修复外层 `code: 0`、`data.common: null` 的成功响应被误拒。补充内层字段类型和身份匹配诊断，保留户号/地区及金额校验。类型检查及95项离线检查通过，**真实金额仍待手机复测**。小程序与历史交费户号的可借用信息见 [研究记录](sgcc-widget/RESEARCH.md)。
+更新到 **1.6.0**，按参考图改为白底、浅青弧纹与大号金额，清楚标注余额类型及截止日期。设置页先展示余额，登录和调试选项默认收起；成功查询不再提示缺少明细或弹确认框。用户已确认1.5.2能查未绑定户号余额，1.6.0沿用该查询与缓存。类型检查及100项离线检查通过，新排版请用 iPhone 原生预览核对。
 
 [使用说明](sgcc-widget/README.md) · [接口说明](sgcc-widget/API.md) · [验证记录](sgcc-widget/VERIFICATION.md)
 
@@ -72,7 +72,7 @@ zhuge-Scrip/
 ├── installers/
 │   └── battery-widget.tsx            # 电量监控可选安装器
 ├── sgcc-widget/                      # 网上国网·手动户号：独立 Scripting 项目
-│   ├── script.json                   # 版本 1.5.2，兼容空 common 的成功响应
+│   ├── script.json                   # 版本 1.6.0，简洁余额卡片与精简设置
 │   ├── index.tsx                     # 登录、手动户号资料与查询结果
 │   ├── widget.tsx                    # 余额与用电信息组件
 │   └── README.md                     # 使用步骤与接口限制

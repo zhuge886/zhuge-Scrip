@@ -101,15 +101,16 @@
     ],
     "productionCredentialsUsed": false,
     "productionHouseholdQueried": false,
-    "authenticatedSuccessObserved": false
+    "authenticatedSuccessReportedByUser": true,
+    "userConfirmedVersion": "1.5.2",
+    "userConfirmationRecord": "user-confirmed-success.json",
+    "authenticatedSuccessObservedByAssistant": false
   },
   "unverified": [
-    "Whether the refresh endpoint accepts a first-time plaintext household without an existing sensitive query identifier",
-    "Whether the existing App login token is sufficient for the SDK TOKEN fields and bootstrap",
-    "Whether the actual server response returns a complete matching household and province",
-    "Any additional official verification, confirmation or initialization requirements",
-    "Actual iPhone runtime and amount agreement with the official App",
-    "Complete SDK gateway mapping and session/header initialization"
+    "First-time queries beyond the user-confirmed case and other regions/providers",
+    "SDK flows requiring additional real-name checks or confirmation",
+    "WeChat mini-program token interchangeability",
+    "Native iOS rendering of the 1.6.0 layout"
   ],
   "additionalGatewayEvidence": {
     "sdkInitMethod": "ThreeAppConfigUtils.setPayLiteHelper",

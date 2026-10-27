@@ -1,5 +1,6 @@
 import {
   Capsule,
+  Circle,
   Gauge,
   HStack,
   Image,
@@ -26,6 +27,7 @@ import { loadPreference } from './store'
 import { selectResult } from './accounts'
 import type { AccountData, Bar, Level } from './data'
 import type { Preference } from './store'
+import { amountDateLabel, visibleWarnings } from './presentation'
 
 /**
  * Home Screen / Lock Screen widget, ported from the Scriptable SGCC.js.
@@ -233,26 +235,56 @@ type Props = {
   preference: Preference
   fetchedAt: number
   error?: string
+  cacheFallback?: boolean
   accountLabel: string
 }
 
-function BalanceView({ data, fetchedAt, error, accountLabel }: Props) {
+function BalanceBackdrop() {
+  const { width, height } = Widget.displaySize
   return (
-    <VStack alignment="leading" spacing={8} padding={16}
+    <ZStack alignment="topLeading" frame={{ width, height }} clipped>
+      <Rectangle fill={{ light: '#FFFFFF', dark: '#152426' }} />
+      <Circle fill={{ light: 'rgba(80,190,180,0.055)', dark: 'rgba(80,190,180,0.05)' }}
+        frame={{ width: height * 2.2, height: height * 2.2 }}
+        offset={{ x: width - height * 0.6, y: height * 0.15 }} />
+      <Circle fill={{ light: 'rgba(80,190,180,0.065)', dark: 'rgba(80,190,180,0.06)' }}
+        frame={{ width: height * 2.05, height: height * 2.05 }}
+        offset={{ x: width - height * 0.42, y: height * 0.22 }} />
+      <Circle fill={{ light: 'rgba(80,190,180,0.075)', dark: 'rgba(80,190,180,0.07)' }}
+        frame={{ width: height * 1.8, height: height * 1.8 }}
+        offset={{ x: width - height * 0.18, y: height * 0.3 }} />
+    </ZStack>
+  )
+}
+
+function BalanceView({ data, fetchedAt, error, cacheFallback, accountLabel }: Props) {
+  const small = Widget.family === 'systemSmall'
+  const scale = Math.max(0.8, Math.min(1.15, Widget.displaySize.height / 155))
+  return (
+    <VStack alignment="leading" spacing={0}
+      padding={{ horizontal: 16 * scale, vertical: 12 * scale }}
       frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }}
-      widgetBackground={{ light: '#FFFFFF', dark: '#171A18' }}>
-      <HStack>
-        <Logo size={24} />
-        <Text font="caption" foregroundStyle={TEXT}>网上国网</Text>
+      widgetBackground={{ light: '#FFFFFF', dark: '#152426' }}
+      background={<BalanceBackdrop />}>
+      <HStack spacing={6 * scale} frame={{ height: 22 * scale }}>
+        <Logo size={22 * scale} />
+        <Text font={13 * scale} fontWeight="semibold" foregroundStyle={TEXT} lineLimit={1}>网上国网</Text>
+        <Spacer minLength={0} />
+        {error ? <Text font={9 * scale} foregroundStyle="systemOrange">{cacheFallback ? '缓存' : '提示'}</Text> : null}
       </HStack>
-      <Text font="caption2" foregroundStyle={TEXT_SECONDARY}>{accountLabel}</Text>
-      <Spacer />
-      <Text font="caption" foregroundStyle={TEXT_SECONDARY}>{data.balanceLabel}</Text>
-      <Text font={28} fontWeight="bold" fontDesign="rounded" foregroundStyle={TEXT}>{data.balance}</Text>
-      {data.amountAsOf ? <Text font="caption2" foregroundStyle={TEXT_SECONDARY}>{`截至 ${data.amountAsOf}`}</Text> : null}
-      {data.amountDue != null ? <Text font="caption" foregroundStyle={TEXT_SECONDARY}>{`本期应缴 ${data.amountDue} 元`}</Text> : null}
-      <Text font="caption2" foregroundStyle={error ? 'systemOrange' : TEXT_SECONDARY}>
-        {`${error ? '⚠︎ ' : ''}${hhmm(fetchedAt)} · 未提供用电明细`}
+      <Text font={10 * scale} foregroundStyle={TEXT_SECONDARY} lineLimit={1}
+        padding={{ top: 4 * scale }}>{accountLabel}</Text>
+      <Rectangle fill={{ light: 'rgba(19,65,62,0.09)', dark: 'rgba(255,255,255,0.12)' }}
+        frame={{ height: 0.5 }} padding={{ top: 9 * scale, bottom: 8 * scale }} />
+      <Text font={10 * scale} foregroundStyle={TEXT_SECONDARY} lineLimit={1}>{data.balanceLabel}</Text>
+      <Text font={(small ? 29 : 32) * scale} fontWeight="bold" fontDesign="rounded"
+        foregroundStyle={TEXT} lineLimit={1} minScaleFactor={0.45}
+        padding={{ top: 3 * scale }}>{data.balance}</Text>
+      {data.amountDue != null ? <Text font={9 * scale} foregroundStyle={TEXT_SECONDARY}
+        lineLimit={1} minScaleFactor={0.65}>{`本期应缴 ${data.amountDue} 元`}</Text> : null}
+      <Spacer minLength={0} />
+      <Text font={9 * scale} foregroundStyle={TEXT_SECONDARY} lineLimit={1} minScaleFactor={0.75}>
+        {amountDateLabel(data.amountAsOf, fetchedAt)}
       </Text>
     </VStack>
   )
@@ -584,7 +616,8 @@ async function main() {
     const number = item.userInfo?.consNo_dst ?? item.userInfo?.consNo ?? ''
     const accountLabel = `户号末四位 ${number.slice(-4)}`
     Widget.present(
-      build({ data: normalize(item), preference, fetchedAt, error: error || warnings.join('；') || undefined, accountLabel }),
+      build({ data: normalize(item), preference, fetchedAt, error: error || visibleWarnings(warnings).join('；') || undefined,
+        cacheFallback: !!error, accountLabel }),
       { reloadPolicy }
     )
   } catch (e) {

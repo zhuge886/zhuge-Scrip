@@ -292,7 +292,7 @@ async function main() {
   await check('a fresh widget without a successful combination makes no login or probe requests', async () => {
     const r = runtime(); configure(r)
     let calls = 0; r.load('vendor/sgcc_protocol').SgApp.prototype.ensure = async () => { calls++; return { accounts: [] } }
-    await assert.rejects(r.load('api/client').getData(), /查询金额/)
+    await assert.rejects(r.load('api/client').getData(), /刷新余额/)
     assert.equal(calls, 0)
   })
   await check('saved combinations are isolated from other household or province settings', async () => {
@@ -300,7 +300,7 @@ async function main() {
     store.saveResolution({ sourceKey: key, account: account(), savedAt: Date.now() })
     for (const patch of [{ consNo: '0007654321' }, { provinceCode: '32101' }]) {
       store.savePreference({ ...p, ...patch })
-      await assert.rejects(r.load('api/client').getData(), /查询金额/)
+      await assert.rejects(r.load('api/client').getData(), /刷新余额/)
     }
   })
   await check('supplementary detail failures retain the balance already obtained', async () => {
@@ -438,7 +438,7 @@ async function main() {
     function find(node) {
       if (!node || typeof node !== 'object') return null
       if (node.props?.title === '所在地区') return node
-      for (const child of node.children ?? []) { const n = find(child); if (n) return n }
+      for (const child of Array.isArray(node) ? node : node.children ?? []) { const n = find(child); if (n) return n }
       return null
     }
     find(tree).props.onChanged('32101')
@@ -457,10 +457,11 @@ async function main() {
   await check('the settings screen offers named regions and scenes with optional metadata', () => {
     const r = runtime(), tree = r.load('views/Settings.tsx').Settings(), text = textOf(tree)
     assert.match(text, /江苏/); assert.match(text, /其他户号交费/); assert.match(text, /查询入口/)
-    assert.match(text, /查询金额/); assert.doesNotMatch(text, /从官网获取供电单位/)
+    assert.match(text, /刷新余额/); assert.doesNotMatch(text, /从官网获取供电单位/)
     assert.doesNotMatch(text, /原查询返回的省份代码|orgNo|constType/)
   })
   await require('./payment.cjs')({ check, runtime, configure, mockSession, account, textOf })
+  await require('./ui.cjs')({ check, runtime, configure, textOf })
   process.stdout.write(`Passed ${checks} offline checks; no real State Grid account or endpoint was used.\n`)
 }
 main().catch((e) => { console.error(e); process.exitCode = 1 })

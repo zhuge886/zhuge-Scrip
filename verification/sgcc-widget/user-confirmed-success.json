@@ -1,0 +1,15 @@
+{
+  "source": "User confirmed that version 1.5.2 can query the balance on their iPhone",
+  "confirmedVersion": "1.5.2",
+  "diagnosticOutcome": "success",
+  "outerCode": 0,
+  "commonType": "null",
+  "householdMatch": true,
+  "provinceMatch": true,
+  "billingType": "prepaid",
+  "prompt": "ready",
+  "realNameDisplay": "not-set",
+  "scope": "One user-confirmed unbound manual-household case; no account, household, time, amount, address or credential values are retained",
+  "assistantLoggedIn": false,
+  "assistantQueriedProductionHousehold": false
+}

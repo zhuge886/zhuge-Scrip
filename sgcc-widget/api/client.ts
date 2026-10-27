@@ -109,7 +109,6 @@ async function fetchAccounts(preference: Preference, discover: boolean, onProgre
         onProgress?.('正在通过其他户号交费入口查询金额…')
         item = await queryPaymentBalance(app as unknown as PaymentApp, { ...account, paymentId })
         current()
-        if (preference.queryScope === 'full') item.warnings = ['交费查询只返回金额；用电明细需要在支持该权限的绑定户号接口查询']
         saveResolution({ sourceKey: key, account: item.resolvedAccount ?? account, savedAt: Date.now() })
         queryInfo = `来源：其他户号交费查询。已核对返回户号和地区。${item.amountAsOf ? `金额截至 ${item.amountAsOf}。` : ''}`
       } else if (isUnboundManual) {
@@ -141,7 +140,7 @@ async function fetchAccounts(preference: Preference, discover: boolean, onProgre
           item = await queryAccount(app, preferred, { scope: preference.queryScope })
           queryInfo = '使用上次成功保存的户号查询组合'
         } else {
-          throw new Error('请先在脚本中选择地区并点「查询金额」；小组件不会自动轮试类型')
+          throw new Error('请先在脚本中选择地区并点「刷新余额」；小组件不会自动轮试类型')
         }
       } else {
         item = await queryAccount(app, account, { scope: preference.queryScope })
@@ -189,7 +188,7 @@ export async function getData({ force = false, discover = false, onProgress, sho
   try {
     const saved = loadResolution()
     if (preference.queryMode === 'manual' && !discover && saved?.sourceKey !== key) {
-      throw new Error('请先在脚本中选择地区并点「查询金额」；小组件不会自动轮试类型')
+      throw new Error('请先在脚本中选择地区并点「刷新余额」；小组件不会自动轮试类型')
     }
     const result = await fetchAccounts(preference, discover, onProgress, shouldContinue)
     const next: Cache = { sourceKey: key, fetchedAt: Date.now(), ...result }

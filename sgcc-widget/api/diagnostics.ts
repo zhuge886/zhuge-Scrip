@@ -43,7 +43,7 @@ export function paymentDiagnostic(value: unknown, outcome: 'success' | 'error', 
     'IS_REAL_NAME_DISPLAY', 'AVALIABLE_BALANCE', 'TOTAL_PAY_BREACH', 'LOCAL_RCV_FLAG',
     'DEADLINE_TIME', 'SENSITIVE_POWER_USER_ID']) values[`row.${field}`] = row?.[field]
   return JSON.stringify({
-    version: '1.5.2', interface: 'payment-single-refresh', time: new Date().toISOString(), outcome,
+    version: '1.6.0', interface: 'payment-single-refresh', time: new Date().toISOString(), outcome,
     statuses: { top: diagnosticCode(root?.code), business: diagnosticCode(common?.repcd),
       gateway: diagnosticCode(srvrt?.resultCode), error: errorCategory(errorCode) },
     schema: Object.fromEntries(Object.entries(values).map(([path, v]) => [path, kind(v)])),

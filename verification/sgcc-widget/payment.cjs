@@ -152,7 +152,8 @@ module.exports = async ({ check, runtime, configure, mockSession, account, textO
   await check('payment queries do not request unavailable daily/monthly detail when full scope is selected', async () => {
     const r = runtime(), { calls } = setup(r, { queryScope: 'full' })
     const out = await r.load('api/client').getData({ force: true, discover: true })
-    assert.equal(calls.length, 1); assert.match(out.warnings.join(' '), /只返回金额/)
+    assert.equal(calls.length, 1); assert.equal(out.warnings.length, 0)
+    assert.equal(out.list[0].availability.daily, false); assert.equal(out.list[0].availability.monthly, false)
   })
   await check('changing channel cannot fall back to an old native balance cache', async () => {
     const r = runtime(), { store, pref, vendor } = setup(r)
@@ -311,7 +312,7 @@ module.exports = async ({ check, runtime, configure, mockSession, account, textO
     const r = runtime(), { paymentDiagnostic } = r.load('api/diagnostics')
     const value = response({ POWER_USER_NAME: 'private-name', POWER_USER_ADDR: 'private-address' }); value.data.common = null
     const report = paymentDiagnostic(value, 'success', undefined, account()), parsed = JSON.parse(report)
-    assert.equal(parsed.version, '1.5.2'); assert.equal(parsed.schema['row.POWER_USER_ID'], 'string')
+    assert.equal(parsed.version, '1.6.0'); assert.equal(parsed.schema['row.POWER_USER_ID'], 'string')
     assert.equal(parsed.schema['row.AVALIABLE_BALANCE'], 'string'); assert.equal(parsed.checks.billingType, 'prepaid')
     assert.equal(parsed.checks.household, 'match'); assert.equal(parsed.checks.province, 'match')
     assert.equal(parsed.checks.prompt, 'ready')

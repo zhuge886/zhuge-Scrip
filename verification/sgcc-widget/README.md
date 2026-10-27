@@ -2,4 +2,4 @@
 
 运行 `npm ci`、`sh fetch-types.sh`、`npm run check` 和 `npm test`。
 
-当前95项检查使用离线模拟，不请求真实国网账号。交费模块协议依据官方公开安装包，出处见 [payment-contract.json](payment-contract.json)；来源核对与离线检查不能证明首次未绑定户号查询已经成功。参见 [验证记录](../../sgcc-widget/VERIFICATION.md)。
+当前100项离线检查不请求真实国网账号。用户已确认1.5.2能查询余额；该结论与离线检查分别记录。1.6.0新排版仍需iPhone原生预览。参见 [验证记录](../../sgcc-widget/VERIFICATION.md)。
