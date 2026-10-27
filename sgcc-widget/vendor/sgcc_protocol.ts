@@ -417,11 +417,19 @@ class SgApp {
       throw new SgError('4006', `国网新设备安全验证：短信验证码已发至 ${this.user.slice(0, 3)}****${this.user.slice(-4)}，请在设置中填入「短信验证码」后刷新`);
     }
   }
-  async authed(path, payload) {
+  async authed(path, payload, { raw = false } = {}) {
     await this.ensure();
     for (let i = 0; i < 2; i++) {
-      const resp = await this.post(path, payload, { authed: true });
-      try { return SgApp.check(resp); }
+      const resp = await this.post(path, typeof payload === 'function' ? payload() : payload, { authed: true });
+      try {
+        if (raw) {
+          // Payment SDK uses ObjectApiResponse (code 0 / MCA00000), unlike the balance API.
+          const code = String(resp.code == null ? '' : resp.code);
+          if (['-200', '-201'].includes(code)) throw new SgError(code, resp.message);
+          return resp;
+        }
+        return SgApp.check(resp);
+      }
       catch (e) {
         if (!['-200', '-201'].includes(e.code) || i) throw e;
         this.st(this.sk(K.sess), {}); this.sess = null; await this.ensure();

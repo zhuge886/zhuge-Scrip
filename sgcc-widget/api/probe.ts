@@ -98,6 +98,9 @@ export async function probeBalance(
       const e = error as { code?: unknown; message?: unknown }
       const message = String(e?.message ?? error).replace(/\d{7,}/g, (s) => `***${s.slice(-4)}`).slice(0,180)
       attempts.push(`${label}：${message}`)
+      if (/户号.*未绑定|未绑定.*户号/.test(message)) {
+      throw Object.assign(new Error('原余额接口要求户号绑定。请把查询入口改为「自动」或「其他户号交费」；此错误不代表 App 的其他户号交费不可查询。'), { code: 'bound_channel_required' })
+      }
       const retryType = canTryAnotherType(error), retryOrg = automaticOrg && canTryAnotherOrganization(error)
       if (!retryType && !retryOrg) throw Object.assign(new Error(`已停止自动尝试。\n${attempts.slice(-6).join('\n')}`), { code: e?.code })
       if (!retryType) invalidOrgs.add(candidate.org)

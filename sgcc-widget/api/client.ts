@@ -17,6 +17,8 @@ import { normalizePhone, selectAccounts, sourceKey, metadataKey } from '../accou
 import type { PowerAccount } from '../accounts'
 import { probeBalance } from './probe'
 import { organizationsFor } from '../organizations'
+import { queryPaymentBalance } from './payment'
+import type { PaymentApp } from './payment'
 
 /** Same as the Scriptable version: at most one round of requests every 4 hours. */
 export const MIN_FETCH_INTERVAL_MS = 4 * 60 * 60 * 1000
@@ -92,7 +94,25 @@ async function fetchAccounts(preference: Preference, discover: boolean, onProgre
       let item: RawAccount
       const isUnboundManual = preference.queryMode === 'manual' &&
         !bound.some((entry: PowerAccount) => entry.src === account.src || entry.consNo === account.consNo)
-      if (isUnboundManual) {
+      const usePayment = preference.queryMode === 'manual' &&
+        (preference.queryChannel === 'payment' || isUnboundManual && preference.queryChannel !== 'balance')
+      if (usePayment) {
+        const key = sourceKey(preference)
+        const current = () => {
+          if (sourceKey(loadPreference()) !== key || shouldContinue?.() === false) {
+            throw Object.assign(new Error('查询已停止或配置已改变，未保存本次结果'), { code: 'cancelled' })
+          }
+        }
+        current()
+        const saved = loadResolution()
+        const paymentId = saved?.sourceKey === key ? saved.account.paymentId : undefined
+        onProgress?.('正在通过其他户号交费入口查询金额…')
+        item = await queryPaymentBalance(app as unknown as PaymentApp, { ...account, paymentId })
+        current()
+        if (preference.queryScope === 'full') item.warnings = ['交费查询只返回金额；用电明细需要在支持该权限的绑定户号接口查询']
+        saveResolution({ sourceKey: key, account: item.resolvedAccount ?? account, savedAt: Date.now() })
+        queryInfo = `来源：其他户号交费查询。已核对返回户号和地区。${item.amountAsOf ? `金额截至 ${item.amountAsOf}。` : ''}`
+      } else if (isUnboundManual) {
         const key = sourceKey(preference)
         const saved = loadResolution()
         const preferred = saved?.sourceKey === key ? saved.account : undefined
@@ -121,7 +141,7 @@ async function fetchAccounts(preference: Preference, discover: boolean, onProgre
           item = await queryAccount(app, preferred, { scope: preference.queryScope })
           queryInfo = '使用上次成功保存的户号查询组合'
         } else {
-          throw new Error('请先在脚本中选择地区并点「自动识别并查询」；小组件不会自动轮试类型')
+          throw new Error('请先在脚本中选择地区并点「查询金额」；小组件不会自动轮试类型')
         }
       } else {
         item = await queryAccount(app, account, { scope: preference.queryScope })
@@ -169,7 +189,7 @@ export async function getData({ force = false, discover = false, onProgress, sho
   try {
     const saved = loadResolution()
     if (preference.queryMode === 'manual' && !discover && saved?.sourceKey !== key) {
-      throw new Error('请先在脚本中选择地区并点「自动识别并查询」；小组件不会自动轮试类型')
+      throw new Error('请先在脚本中选择地区并点「查询金额」；小组件不会自动轮试类型')
     }
     const result = await fetchAccounts(preference, discover, onProgress, shouldContinue)
     const next: Cache = { sourceKey: key, fetchedAt: Date.now(), ...result }

@@ -247,8 +247,9 @@ function BalanceView({ data, fetchedAt, error, accountLabel }: Props) {
       </HStack>
       <Text font="caption2" foregroundStyle={TEXT_SECONDARY}>{accountLabel}</Text>
       <Spacer />
-      <Text font="caption" foregroundStyle={TEXT_SECONDARY}>{data.arrearsOfFees ? '待缴电费' : '电费余额'}</Text>
+      <Text font="caption" foregroundStyle={TEXT_SECONDARY}>{data.balanceLabel}</Text>
       <Text font={28} fontWeight="bold" fontDesign="rounded" foregroundStyle={TEXT}>{data.balance}</Text>
+      {data.amountAsOf ? <Text font="caption2" foregroundStyle={TEXT_SECONDARY}>{`截至 ${data.amountAsOf}`}</Text> : null}
       {data.amountDue != null ? <Text font="caption" foregroundStyle={TEXT_SECONDARY}>{`本期应缴 ${data.amountDue} 元`}</Text> : null}
       <Text font="caption2" foregroundStyle={error ? 'systemOrange' : TEXT_SECONDARY}>
         {`${error ? '⚠︎ ' : ''}${hhmm(fetchedAt)} · 未提供用电明细`}
@@ -402,7 +403,7 @@ function MediumView({ data, preference, fetchedAt, error }: Props) {
         <Logo size={rpt(24)} />
         <Spacer minLength={rpt(12)} />
         <Text font={rpt(10)} foregroundStyle={TEXT_SECONDARY}>
-          {data.arrearsOfFees ? '待缴电费' : '剩余电费'}
+          {data.balanceLabel}
         </Text>
         <Text
           font={rpt(18)}
@@ -470,12 +471,12 @@ function MediumView({ data, preference, fetchedAt, error }: Props) {
 
 function AccessoryView({ data, preference }: Props) {
   if (!data.availability.monthly) {
-    return <Text>{`⚡︎ ${data.arrearsOfFees ? '待缴' : '余额'} ${data.balance}`}</Text>
+    return <Text>{`⚡︎ ${data.balanceLabel} ${data.balance}`}</Text>
   }
   const step = stepProgress(data.stepPq, preference.oneLevelPq, preference.twoLevelPq)
   const overall = (step.level * step.percent) / 3
   const stepText = `第${LEVEL_NAMES[step.level]}梯度 ${Math.round(step.percent * 100)}%`
-  const balanceLabel = data.arrearsOfFees ? '待缴' : '余额'
+  const balanceLabel = data.balanceLabel
 
   switch (Widget.family) {
     case 'accessoryCircular':

@@ -13,12 +13,14 @@ import type { PowerAccount } from './accounts'
 export type Dimension = 'daily' | 'monthly'
 export type QueryMode = 'manual' | 'bound'
 export type QueryScope = 'balance' | 'full'
+export type QueryChannel = 'auto' | 'payment' | 'balance'
 
 export type Preference = {
   phone: string
   smsCode: string
   queryMode: QueryMode
   queryScope: QueryScope
+  queryChannel: QueryChannel
   consNo: string
   provinceCode: string
   orgNo: string
@@ -49,6 +51,7 @@ export const defaultPreference: Preference = {
   smsCode: '',
   queryMode: 'manual',
   queryScope: 'balance',
+  queryChannel: 'auto',
   consNo: '',
   provinceCode: '',
   orgNo: '',

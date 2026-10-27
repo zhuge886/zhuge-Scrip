@@ -32,7 +32,7 @@ import {
   savePreference,
   setPassword
 } from '../store'
-import type { Dimension, Preference, QueryMode, QueryScope } from '../store'
+import type { Dimension, Preference, QueryMode, QueryScope, QueryChannel } from '../store'
 import { sourceKey, metadataKey, clearImportedFields } from '../accounts'
 import { REGIONS, ELEC_TYPES } from '../regions'
 
@@ -103,7 +103,7 @@ export function Settings() {
       clearMetadata()
     }
     if ('provinceCode' in patch && patch.provinceCode !== preference.provinceCode) patch = { ...patch, orgNo: '' }
-    if (['phone', 'queryMode', 'queryScope', 'consNo', 'provinceCode', 'orgNo', 'elecType']
+    if (['phone', 'queryMode', 'queryScope', 'queryChannel', 'consNo', 'provinceCode', 'orgNo', 'elecType']
       .some((key) => key in patch)) {
       if (operation.current) operation.current.cancelled = true
       clearCache()
@@ -195,7 +195,7 @@ export function Settings() {
       >
         <Section
           header={<Text>查询方式</Text>}
-          footer={<Text>输入户号，选择地区和供电公司。公司不确定时可选自动，在已收录的真实公司列表中逐项尝试。仍需登录本人的网上国网账号。</Text>}
+          footer={<Text>自动模式：未绑定户号走其他户号交费查询；已绑定户号保留余额与明细查询。仍需登录本人的网上国网账号。</Text>}
         >
           <Picker title="户号来源" value={preference.queryMode}
             onChanged={(value: string) => update({ queryMode: value as QueryMode })}>
@@ -212,7 +212,7 @@ export function Settings() {
         {preference.queryMode === 'manual' ? (
           <Section
             header={<Text>手动户号</Text>}
-            footer={<Text>保留户号开头的 0。北京已收录城区等供电公司。知道公司时直接选择，住宅用户建议选住宅；公司与类型均可自动尝试，最多 30 次，可随时停止。</Text>}
+            footer={<Text>保留户号开头的 0。交费查询只需户号和地区，无需供电公司代码。余额、表内余额和应缴金额会按返回类型分别标注；可能要求在 App 完成验证。</Text>}
           >
             <TextField title="用电户号" prompt="完整户号" value={preference.consNo}
               keyboardType="numberPad" onChanged={(consNo: string) => update({ consNo })} />
@@ -223,26 +223,34 @@ export function Settings() {
               {preference.provinceCode && !REGIONS.some((region) => region.code === preference.provinceCode)
                 ? <Text tag={preference.provinceCode}>{`自定义地区 ${preference.provinceCode}`}</Text> : null}
             </Picker>
-            <Picker title="供电公司" value={preference.orgNo}
+            <Picker title="查询入口" value={preference.queryChannel}
+              onChanged={(queryChannel: string) => update({ queryChannel: queryChannel as QueryChannel })}>
+              <Text tag="auto">自动（推荐）</Text>
+              <Text tag="payment">其他户号交费</Text>
+              <Text tag="balance">原余额接口（兼容）</Text>
+            </Picker>
+            {preference.queryChannel === 'balance' ? [
+            <Picker key="company" title="供电公司" value={preference.orgNo}
               onChanged={(orgNo: string) => update({ orgNo })}>
               <Text tag="">自动尝试已收录公司</Text>
               {companies.map((company) => <Text key={company.code} tag={company.code}>{company.name}</Text>)}
               {preference.orgNo && !companies.some((company) => company.code === preference.orgNo)
                 ? <Text tag={preference.orgNo}>{`自定义单位 ${preference.orgNo}`}</Text> : null}
-            </Picker>
-            {!companies.length ? <Text foregroundStyle="secondaryLabel">该地区暂未收录单位目录；可使用账号已有的同地区资料或在高级设置填写真实单位代码。</Text> : null}
-            <Picker title="用电类型" value={preference.elecType}
+            </Picker>,
+            !companies.length ? <Text foregroundStyle="secondaryLabel">该地区暂未收录单位目录；可使用账号已有的同地区资料或在高级设置填写真实单位代码。</Text> : null,
+            <Picker key="scene" title="用电类型" value={preference.elecType}
               onChanged={(elecType: string) => update({ elecType })}>
               <Text tag="">自动尝试（推荐）</Text>
               {ELEC_TYPES.map((type) => <Text key={type.code} tag={type.code}>{type.name}</Text>)}
               {preference.elecType && !ELEC_TYPES.some((type) => type.code === preference.elecType)
                 ? <Text tag={preference.elecType}>{`自定义类型 ${preference.elecType}`}</Text> : null}
             </Picker>
-            <Toggle title="高级设置（选填）" value={advanced} onChanged={setAdvanced} />
+            ] : null}
+            {preference.queryChannel === 'balance' ? <Toggle title="高级设置（选填）" value={advanced} onChanged={setAdvanced} /> : null}
           </Section>
         ) : null}
 
-        {preference.queryMode === 'manual' && advanced ? (
+        {preference.queryMode === 'manual' && preference.queryChannel === 'balance' && advanced ? (
           <Section header={<Text>可选查询资料</Text>}
             footer={<Text>选公司会使用其真实目录代码。自定义代码优先于自动尝试；不要填写缴费商户编号或工商代码。</Text>}>
             <TextField title="供电单位代码（选填）" prompt="可留空" value={preference.orgNo}
@@ -296,7 +304,7 @@ export function Settings() {
               if (!item) return <Text key={index}>{`第 ${index + 1} 户查询失败`}</Text>
               const data = normalize(item)
               const label = item.userInfo?.consNo_dst ?? item.userInfo?.consNo ?? ''
-              return <Text key={index}>{`户号末四位 ${label.slice(-4)} · ${data.arrearsOfFees ? '待缴' : '余额'} ${data.balance} 元${data.amountDue != null ? ` · 本期应缴 ${data.amountDue} 元` : ''}`}</Text>
+              return <Text key={index}>{`户号末四位 ${label.slice(-4)} · ${data.balanceLabel} ${data.balance} 元${data.amountDue != null ? ` · 本期应缴 ${data.amountDue} 元` : ''}`}</Text>
             })}
             {result.error ? <Text foregroundStyle="systemOrange">{result.error}</Text> : null}
             {result.warnings.map((message, index) => <Text key={`warning-${index}`} foregroundStyle="systemOrange">{message}</Text>)}
@@ -306,12 +314,12 @@ export function Settings() {
         <Section header={<Text>数据</Text>}>
           <Button action={onRefresh} disabled={refreshing || sending}>
             <HStack>
-              <Text>{preference.queryMode === 'manual' ? '自动识别并查询' : '立即刷新'}</Text>
+              <Text>{preference.queryMode === 'manual' ? '查询金额' : '立即刷新'}</Text>
               <Spacer />
               {refreshing ? <ProgressView /> : null}
             </HStack>
           </Button>
-          {refreshing ? <Button title="停止自动尝试" action={() => { if (operation.current) operation.current.cancelled = true; setQueryStatus('正在停止，等待当前请求结束…') }} /> : null}
+          {refreshing ? <Button title="停止查询" action={() => { if (operation.current) operation.current.cancelled = true; setQueryStatus('正在停止，等待当前请求结束…') }} /> : null}
           {queryStatus ? <Text foregroundStyle="secondaryLabel">{queryStatus}</Text> : null}
           <Button title="清除数据缓存" role="destructive" action={onClearCache} />
         </Section>

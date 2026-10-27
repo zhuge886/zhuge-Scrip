@@ -9,6 +9,8 @@ export type PowerAccount = {
   elec: string
   name: string
   orgName: string
+  /** Opaque ID returned by the payment query; never logged or displayed. */
+  paymentId?: string
 }
 
 export const MAX_ACCOUNTS = 6
@@ -20,7 +22,7 @@ export function normalizePhone(value: string): string {
 export function sourceKey(preference: Preference): string {
   const p = preference
   return JSON.stringify([
-    'sgcc-manual-v4', normalizePhone(p.phone), p.queryMode, p.queryScope, p.metadataRevision,
+    'sgcc-manual-v5', normalizePhone(p.phone), p.queryMode, p.queryScope, p.queryChannel, p.metadataRevision,
     ...(p.queryMode === 'manual'
       ? [p.consNo.trim(), p.provinceCode.trim(), p.orgNo.trim(), p.elecType.trim()]
       : [])
@@ -52,9 +54,14 @@ export function selectAccounts(preference: Preference, bound: PowerAccount[], me
   if (existing) return [existing]
 
   const pro = preference.provinceCode.trim()
+  if (!pro) throw new Error('请先选择户号所在地区')
+  if (preference.queryChannel !== 'balance') {
+    if (!/^\d+$/.test(pro)) throw new Error('地区代码应为数字，请重新选择地区')
+    // Payment requests take the typed household, not an imported bound-account ID.
+    return [{ consNo, src: consNo, pro, org: '', elec: '', name: '', orgName: '' }]
+  }
   const org = preference.orgNo.trim()
   const elec = preference.elecType.trim()
-  if (!pro) throw new Error('请先选择户号所在地区')
   if (![pro, org, elec].every((value) => value === '' || /^\d+$/.test(value))) {
     throw new Error('高级设置中的代码应为数字；不知道供电单位代码时请留空')
   }

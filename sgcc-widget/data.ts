@@ -8,6 +8,8 @@ import type { PowerAccount } from './accounts'
 
 /** Shape returned by `queryAccount` in `vendor/sgcc_protocol.ts`. */
 export type RawAccount = {
+  moneyKind?: 'balance' | 'meter_balance' | 'amount_due'
+  amountAsOf?: string
   resolvedAccount?: PowerAccount
   householdVerified?: boolean
   availability?: { balance: boolean; daily: boolean; monthly: boolean }
@@ -42,6 +44,8 @@ export type AccountData = {
   availability: { balance: boolean; daily: boolean; monthly: boolean }
   arrearsOfFees: boolean
   balance: string
+  balanceLabel: string
+  amountAsOf?: string
   amountDue?: string
   lastAmount: string
   lastPq: number
@@ -137,6 +141,8 @@ export function normalize(data: RawAccount): AccountData {
       monthly: !!data.monthElecQuantity
     },
     arrearsOfFees,
+    balanceLabel: data.moneyKind === 'meter_balance' ? '表内余额' : data.moneyKind === 'amount_due' ? '应缴电费' : arrearsOfFees ? '待缴电费' : '电费余额',
+    amountAsOf: data.amountAsOf,
     balance: data.availability?.balance === false ? '--' : toNumber(balance).toFixed(2),
     amountDue: data.availability?.balance !== false && eleBill.billAmount != null && Number.isFinite(Number(eleBill.billAmount))
       ? toNumber(eleBill.billAmount).toFixed(2) : undefined,

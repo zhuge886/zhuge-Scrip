@@ -1,0 +1,111 @@
+{
+  "purpose": "Primary-source protocol notes; static inspection, not a successful authenticated household query",
+  "source": {
+    "landingPage": "https://osg-static.sgcc.com.cn/app/download/index.html",
+    "apkUrl": "https://osg-static.sgcc.com.cn/app/upgrade/wsgw_android.apk",
+    "package": "com.sgcc.wsgw.cn",
+    "versionName": "3.2.3",
+    "versionCode": "113",
+    "byteLength": 133242750,
+    "sha256": "5bde9d4337cbfaede8717428de869e1211994f8c1ce504f2b603da451dc5e7bf",
+    "sdkVersion": "1.2024.09.25.01"
+  },
+  "readOnlyRefresh": {
+    "declaration": "com.htjc.pay.lite.moudle.IService.queryEleInfoSingle",
+    "caller": "SingleElecIndexPresenter.refreshELeListItem(QueryEleInfoModel, boolean)",
+    "method": "POST",
+    "path": "emss-eaa-payelec-front/member/p1/f04",
+    "serviceCode": "f05",
+    "sourceLiteral": "undefined",
+    "targetLiteral": "undefined",
+    "outerModel": "ApiRequest / RequestSerivcePlatformData",
+    "nestedModel": "RequestBusinessData {common: RequestHeader, data: Map}",
+    "businessFields": [
+      "TYPE",
+      "PROVINCE_CODE",
+      "POWER_USER_ID",
+      "SENSITIVE_POWER_USER_ID",
+      "TOKEN"
+    ],
+    "type": "3",
+    "notIncluded": [
+      "orgNo",
+      "sceneType",
+      "ADD_TYPE"
+    ]
+  },
+  "response": {
+    "models": [
+      "ObjectApiResponse",
+      "ResponseBussinessResult",
+      "ResponseHeader",
+      "QueryEleInfoModel"
+    ],
+    "businessStatus": "common.repcd / common.repmsg",
+    "identity": [
+      "POWER_USER_ID",
+      "PROVINCE_CODE"
+    ],
+    "confirmation": "SingleElecIndexPresenter$3.onSuccess handles PROMPT_STATUS=0 as success; 1/2 require a prompt or confirmation",
+    "visibility": "PowerHelper.setMoney checks IS_REAL_NAME_DISPLAY before displaying normal money fields",
+    "amountRules": [
+      {
+        "type": "01",
+        "field": "AVALIABLE_BALANCE",
+        "unit": "integer fen",
+        "label": "balance"
+      },
+      {
+        "type": "01",
+        "province": "11102",
+        "localRcvFlag": "not 0",
+        "field": "AVALIABLE_BALANCE",
+        "unit": "integer fen",
+        "label": "meter balance",
+        "asOf": "DEADLINE_TIME"
+      },
+      {
+        "type": "00",
+        "field": "TOTAL_PAY_BREACH",
+        "unit": "integer fen",
+        "label": "amount due"
+      }
+    ],
+    "amountSourceMethods": [
+      "PowerHelper.setMoney",
+      "MoneyUtil.fenToYuan",
+      "MoneyUtil.getBalanceDisplay"
+    ],
+    "statusSourceMethods": [
+      "EleUtils.objectSuccess",
+      "ObjectApiUtils.getCommon",
+      "ObjectApiUtils.getData"
+    ],
+    "success": "ObjectApiResponse code=0 or common.repcd=MCA00000; implementation also rejects explicit business errors"
+  },
+  "scope": {
+    "implemented": [
+      "one selected household and province",
+      "single-household refresh only",
+      "exact response identity required",
+      "amount-only display"
+    ],
+    "notCalled": [
+      "initial add-counter flow",
+      "binding",
+      "order creation",
+      "payment",
+      "delete household"
+    ],
+    "productionCredentialsUsed": false,
+    "productionHouseholdQueried": false,
+    "authenticatedSuccessObserved": false
+  },
+  "unverified": [
+    "Whether the refresh endpoint accepts a first-time plaintext household without an existing sensitive query identifier",
+    "Whether the existing App login token is sufficient for the SDK TOKEN fields and bootstrap",
+    "Whether the actual server response returns a complete matching household and province",
+    "Any additional official verification, confirmation or initialization requirements",
+    "Actual iPhone runtime and amount agreement with the official App"
+  ]
+}

@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- |
 | 电量监控 | 1.1.1 | 中文电量界面、简洁桌面圆环与百分比、标准蓝牙配件按需读取 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget) | [查看说明](battery-widget/README.md) |
 | 三角洲收益 | 1.7.0 | 轻磨砂小中号布局、真实累计曲线与每日盈亏、明暗 / 透明主题 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
-| 网上国网·手动户号 | 1.4.0 | 北京15家公司选择与有限自动尝试、可停止、保存成功组合；真实余额待验证 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
+| 网上国网·手动户号 | 1.5.0 | 新增其他户号交费金额查询，区分余额 / 表内余额 / 应缴；未绑定入口待真机验证 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
 
 ## 远程导入链接（点击代码块右上角即可复制）
 
@@ -49,7 +49,7 @@ https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget
 https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget
 ```
 
-更新到 **1.4.0**，去掉不适用于未绑定户号的官网资料获取流程。已实查北京15家公司的真实编码，可直接选“国网北京城区供电公司＋住宅”，或自动尝试已收录的公司/类型；每轮最多30次，可停止，成功组合供小组件复用。53项离线检查通过，**真实未绑定户号余额仍待 iPhone 验收**。
+更新到 **1.5.0**，未绑定户号在自动模式下改用官方交费模块的单户金额查询，只填写户号和地区。区分余额、表内余额及应缴电费，不再把旧余额接口的“未绑定”解释为 App 无法查询。已通过类型检查及80项离线检查；**首次未绑定户号查询与登录凭证兼容性仍待 iPhone 实测**。
 
 [使用说明](sgcc-widget/README.md) · [接口说明](sgcc-widget/API.md) · [验证记录](sgcc-widget/VERIFICATION.md)
 
@@ -72,7 +72,7 @@ zhuge-Scrip/
 ├── installers/
 │   └── battery-widget.tsx            # 电量监控可选安装器
 ├── sgcc-widget/                      # 网上国网·手动户号：独立 Scripting 项目
-│   ├── script.json                   # 版本 1.4.0，供电公司选择与有限自动尝试
+│   ├── script.json                   # 版本 1.5.0，其他户号交费金额查询
 │   ├── index.tsx                     # 登录、手动户号资料与查询结果
 │   ├── widget.tsx                    # 余额与用电信息组件
 │   └── README.md                     # 使用步骤与接口限制

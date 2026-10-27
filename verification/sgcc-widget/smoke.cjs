@@ -17,7 +17,7 @@ function runtime() {
   const widget = { family: 'systemSmall', parameter: '', displaySize: { width: 155, height: 155 },
     output: null, present(element) { this.output = element }, reloadAll() {}, async preview() {} }
   const context = vm.createContext({
-    console: { log() {}, error() {} },
+    console: { log() {}, error() {} }, Fragment: 'Fragment',
     Storage: { get: (k) => storage.get(k), set: (k, v) => storage.set(k, v), remove: (k) => storage.delete(k) },
     Keychain: { contains: (k) => keychain.has(k), get: (k) => keychain.get(k),
       set: (k, v) => keychain.set(k, v), remove: (k) => keychain.delete(k) },
@@ -40,7 +40,7 @@ function runtime() {
     const mod = { exports: {} }; modules.set(file, mod)
     const output = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
       compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS,
-        jsx: ts.JsxEmit.React, jsxFactory: 'createElement' }, fileName: file
+        jsx: ts.JsxEmit.React, jsxFactory: 'createElement', jsxFragmentFactory: 'Fragment' }, fileName: file
     }).outputText
     const req = (id) => id === 'scripting' ? scripting : load(path.resolve(path.dirname(file), id))
     vm.runInContext(`(function(require,module,exports){${output}\n})`, context, { filename: file })(req, mod, mod.exports)
@@ -52,7 +52,7 @@ function runtime() {
 function fixture(r) {
   const store = r.load('store')
   return { ...store.defaultPreference, phone: '13800000000', consNo: '0001234567',
-    provinceCode: '11102', orgNo: 'fixture01', elecType: '01' }
+    provinceCode: '11102', orgNo: 'fixture01', elecType: '01', queryChannel: 'balance' }
 }
 function manual(r) { return { ...fixture(r), orgNo: '1110201' } }
 function account() { return { consNo: 'encrypted-fixture', src: '0001234567',
@@ -75,7 +75,7 @@ function configure(r) {
 function mockSession(r, bound = []) {
   const vendor = r.load('vendor/sgcc_protocol')
   vendor.SgApp.prototype.ensure = async function () {
-    this.sess = { userId: 'test-user', accounts: bound }; return this.sess
+    this.sess = { userId: 'test-user', token: 'test-app-token', accounts: bound }; return this.sess
   }
   return vendor
 }
@@ -198,7 +198,7 @@ async function main() {
       store.savePreference({ ...p, consNo: '0007654321' }); store.saveCache(sentinel)
       return { list: [{ consType: '1', sumMoney: 5 }] }
     }
-    await assert.rejects(r.load('api/client').getData({ force: true, discover: true }), /已停止/)
+    await assert.rejects(r.load('api/client').getData({ force: true, discover: true }), /已停止|原余额接口要求户号绑定/)
     assert.equal(store.loadCache(), sentinel); assert.equal(store.loadResolution(), null)
   })
   await check('password changes invalidate cached data and use the isolated keychain prefix', () => {
@@ -240,7 +240,7 @@ async function main() {
       ['net', '连不上国网服务器'], ['auth', '登录已失效'], ['403', '户号未绑定，无权限']]) {
       const r = runtime(); let calls = 0
       const app = { sess: {}, authed: async () => { calls++; throw Object.assign(new Error(message), { code }) } }
-      await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), elec: '' }, { pause: async () => {} }), /已停止/)
+      await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), elec: '' }, { pause: async () => {} }), /已停止|原余额接口要求户号绑定/)
       assert.equal(calls, 1, code)
     }
   })
@@ -292,7 +292,7 @@ async function main() {
   await check('a fresh widget without a successful combination makes no login or probe requests', async () => {
     const r = runtime(); configure(r)
     let calls = 0; r.load('vendor/sgcc_protocol').SgApp.prototype.ensure = async () => { calls++; return { accounts: [] } }
-    await assert.rejects(r.load('api/client').getData(), /自动识别并查询/)
+    await assert.rejects(r.load('api/client').getData(), /查询金额/)
     assert.equal(calls, 0)
   })
   await check('saved combinations are isolated from other household or province settings', async () => {
@@ -300,7 +300,7 @@ async function main() {
     store.saveResolution({ sourceKey: key, account: account(), savedAt: Date.now() })
     for (const patch of [{ consNo: '0007654321' }, { provinceCode: '32101' }]) {
       store.savePreference({ ...p, ...patch })
-      await assert.rejects(r.load('api/client').getData(), /自动识别并查询/)
+      await assert.rejects(r.load('api/client').getData(), /查询金额/)
     }
   })
   await check('supplementary detail failures retain the balance already obtained', async () => {
@@ -395,7 +395,7 @@ async function main() {
     for (const [code, message] of [['RK006','需人机验证'],['429','限流'],['auth','登录失效'],['403','必须绑定户号'],['server','orgNo不能为空'],['net','请求超时']]) {
       const r = runtime(); let calls = 0
       const app = { sess: {}, async authed() { calls++; throw Object.assign(new Error(message), { code }) } }
-      await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, { organizations: catalog(), pause: async () => {} }), /已停止/)
+      await assert.rejects(r.load('api/probe').probeBalance(app, { ...account(), org: '', elec: '' }, { organizations: catalog(), pause: async () => {} }), /已停止|原余额接口要求户号绑定/)
       assert.equal(calls, 1, code)
     }
   })
@@ -456,10 +456,11 @@ async function main() {
   }
   await check('the settings screen offers named regions and scenes with optional metadata', () => {
     const r = runtime(), tree = r.load('views/Settings.tsx').Settings(), text = textOf(tree)
-    assert.match(text, /江苏/); assert.match(text, /住宅/); assert.match(text, /新能源/)
-    assert.match(text, /供电公司/); assert.match(text, /自动识别并查询/); assert.doesNotMatch(text, /从官网获取供电单位/)
+    assert.match(text, /江苏/); assert.match(text, /其他户号交费/); assert.match(text, /查询入口/)
+    assert.match(text, /查询金额/); assert.doesNotMatch(text, /从官网获取供电单位/)
     assert.doesNotMatch(text, /原查询返回的省份代码|orgNo|constType/)
   })
+  await require('./payment.cjs')({ check, runtime, configure, mockSession, account, textOf })
   process.stdout.write(`Passed ${checks} offline checks; no real State Grid account or endpoint was used.\n`)
 }
 main().catch((e) => { console.error(e); process.exitCode = 1 })
