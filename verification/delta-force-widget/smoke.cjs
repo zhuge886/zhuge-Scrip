@@ -6,13 +6,15 @@ const assert = require('node:assert/strict')
 const { test, beforeEach } = require('node:test')
 const ts = require('typescript')
 const root = path.resolve(__dirname, '../../delta-force-widget')
-let transport, storage, keychain, views
+let transport, storage, keychain, views, nativeAppearance = 'light'
 const nativeWidget = {}
 const original = Module._load
-const elements = Object.fromEntries(['VStack', 'HStack', 'Text', 'Spacer', 'Image', 'Chart', 'LineChart', 'AreaChart', 'ZStack', 'Rectangle'].map(name => [name, name]))
+const elements = Object.fromEntries(['VStack', 'HStack', 'Text', 'Spacer', 'Image', 'Chart', 'LineChart', 'AreaChart', 'ZStack', 'Rectangle', 'RoundedRectangle', 'Canvas', 'BarChart'].map(name => [name, name]))
+const scriptingRuntime = { ...elements, fetch: (...args) => transport(...args), Widget: nativeWidget,
+  gradient: (_type, value) => value, Script: { name: '三角洲收益', createRunURLScheme: () => 'scripting://synthetic' },
+  EnvironmentValuesReader: props => (Array.isArray(props.children) ? props.children[0] : props.children)({colorScheme:nativeAppearance}) }
 Module._load = function(name, ...args) {
-  if (name === 'scripting') return { ...elements, fetch: (...args) => transport(...args), Widget: nativeWidget,
-    gradient: (_type, value) => value, Script: { name: '三角洲收益', createRunURLScheme: () => 'scripting://synthetic' } }
+  if (name === 'scripting') return scriptingRuntime
   return original.call(this, name, ...args)
 }
 global.__deltaJSX = (type, props, ...children) => {
@@ -33,6 +35,8 @@ const auth = require(path.join(root, 'auth.ts'))
 const renewal = require(path.join(root, 'renew.ts'))
 const widgetUI = require(path.join(root, 'widget-view.tsx'))
 const history = require(path.join(root, 'history.ts'))
+const presentation = require(path.join(root, 'presentation.ts'))
+const trendUI = require(path.join(root, 'trend-view.tsx'))
 const now = Date.parse('2026-10-23T04:00:00Z')
 const session = { acctype: 'wx', appid: model.WX_PC_APP, openid: 'synthetic_openid_A', access_token: 'synthetic_token_A' }
 const another = { ...session, openid: 'synthetic_openid_B', access_token: 'synthetic_token_B' }
@@ -67,6 +71,7 @@ function texts(node) {
 async function seed() { store.saveSession(session); return api.refreshSnapshot(true, now) }
 beforeEach(() => {
   storage = new Map(); keychain = new Map(); views = []; transport = success
+  nativeAppearance = 'light'; scriptingRuntime.Canvas = elements.Canvas
   for (const key of Object.keys(nativeWidget)) delete nativeWidget[key]
   Object.assign(nativeWidget,{ family:'systemSmall', displaySize:{width:158,height:158}, parameter:'',
     reloadAll() {}, preview:async()=>{}, present(){} })
@@ -487,20 +492,16 @@ test('logout or account switch during renewal cannot restore old credentials', a
     assert.notEqual(store.loadSession()?.access_token, 'synthetic_new_token_A')
   }
 })
-test('transparent widget content has no background, icons, update footer or login banner', async () => {
+test('transparent widgets retain content and tap URL without a painted card', async () => {
   const snapshot = await seed()
-  const visit = node => {
-    if (!node || typeof node !== 'object') return
-    if (Array.isArray(node)) { node.forEach(visit); return }
-    assert.equal(node.props.background, undefined)
-    assert.equal(node.props.widgetBackground, undefined)
-    assert.notEqual(node.type, 'Image')
-    visit(node.props.children)
-  }
   for (const small of [true,false]) {
-    const card = widgetUI.WidgetCard({ snapshot: { ...snapshot, needsLogin: true }, small, transparent: true })
-    visit(card)
-    assert.ok(!texts(card).join(' ').match(/登录|更新于|上次同步|扫码|最近一份/))
+    const card = widgetUI.WidgetCard({snapshot,small,transparent:true,url:'scripting://synthetic',now})
+    assert.equal(card.props.background,undefined)
+    assert.equal(card.props.widgetBackground,undefined)
+    assert.equal(card.props.widgetURL,'scripting://synthetic')
+    assert.equal(nodesOfType(card,'Rectangle').length,0)
+    assert.equal(nodesOfType(card,'RoundedRectangle').length,0)
+    assert.ok(!texts(card).join(' ').match(/登录|扫码|三角洲行动|哈夫币|哈弗币/))
     assert.ok(texts(card).includes('+5,285,832'))
   }
 })
@@ -518,54 +519,48 @@ function contrast(first, second) {
   const a = luminance(first), b = luminance(second)
   return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)
 }
-test('ordinary widgets remain readable on the neutral stock card for positive, negative, zero and missing income', async () => {
+test('light and dark glass themes keep readable text and domestic profit colors', async () => {
   const original = await seed()
-  for (const small of [true,false]) for (const value of ['5285832','-1814421','0',null]) {
-    const card = widgetUI.WidgetCard({snapshot:{...original,profit:{...original.profit,value}},small})
-    assert.equal(card.props.background,'#F8FAFC')
-    const backgrounds = nodesOfType(card,'Rectangle')[0].props.fill.colors
-    assert.ok(backgrounds.length>=2)
-    assert.ok(backgrounds.every(color=>[1,3,5].every(index=>parseInt(color.slice(index,index+2),16)>=240)))
-    const nodes = textNodes(card)
-    assert.ok(nodes.some(n => texts(n).includes('最近收益')))
-    assert.ok(nodes.some(n => texts(n).includes(value === null ? '待同步' : model.formatAmount(value,true))))
-    for (const node of nodes) {
-      assert.equal(typeof node.props.foregroundStyle,'string')
-      for (const background of backgrounds) assert.ok(contrast(node.props.foregroundStyle,background) >= 4.5, texts(node).join(' '))
+  for (const small of [true,false]) for (const mode of ['light','dark']) for (const value of ['5285832','-1814421','0',null]) {
+    const theme = presentation.widgetTheme(mode)
+    const card = widgetUI.WidgetCard({snapshot:{...original,profit:{...original.profit,value}},small,theme:mode,now})
+    assert.equal(card.props.background,theme.base)
+    const rects = nodesOfType(card,'Rectangle')
+    assert.equal(rects[0].props.fill,'regularMaterial')
+    assert.deepEqual(rects[1].props.fill.colors,theme.surface)
+    assert.ok(nodesOfType(card,'RoundedRectangle')[0].props.stroke.strokeStyle.lineWidth < 1)
+    for (const node of textNodes(card)) for (const background of theme.surface) {
+      assert.ok(contrast(node.props.foregroundStyle,background) >= 4.5, texts(node).join(' '))
     }
-    if (value && value !== '0') {
-      const amount = nodes.find(n => texts(n).includes(model.formatAmount(value,true)))
-      const label = nodes.find(n => texts(n).includes('最近收益'))
-      assert.notEqual(amount.props.foregroundStyle,label.props.foregroundStyle)
-      const color=amount.props.foregroundStyle
-      const red=parseInt(color.slice(1,3),16),green=parseInt(color.slice(3,5),16)
-      assert.ok(value.startsWith('-') ? green>red : red>green)
-    }
+    const amount = textNodes(card).find(n=>texts(n).includes(value===null?'待同步':model.formatAmount(value,true)))
+    assert.ok(amount)
+    assert.equal(amount.props.foregroundStyle, value===null?theme.muted:value==='0'?theme.neutral:value.startsWith('-')?theme.loss:theme.gain)
   }
 })
-test('the stock card is the default and transparency requires an explicit parameter', async () => {
+test('theme parsing preserves legacy transparent and stock parameters', () => {
+  for (const raw of [undefined,null,'','blue','{}','{"background":"stock"}','{"theme":"unknown"}',{isTransparentMode:true}]) {
+    assert.equal(presentation.themeParameter(raw),'system')
+  }
+  for (const mode of ['system','light','dark','transparent']) {
+    assert.equal(presentation.themeParameter(mode),mode)
+    assert.equal(presentation.themeParameter(JSON.stringify({theme:mode})),mode)
+  }
+  for (const raw of ['transparent',' TRANSPARENT ','{"background":"transparent"}']) assert.equal(widgetUI.transparentParameter(raw),true)
+  assert.equal(presentation.themeParameter('{"theme":"dark","background":"transparent"}'),'transparent')
+})
+test('system and transparent themes read the actual native environment appearance', async () => {
   const snapshot = await seed()
-  for (const parameter of [undefined,null,'','blue','{}','{"background":"blue"}',{isTransparentMode:true}]) {
-    assert.equal(widgetUI.transparentParameter(parameter),false)
-    assert.equal(nodesOfType(widgetUI.WidgetCard({snapshot}),'Rectangle').length,1)
-  }
-  for (const parameter of ['transparent',' TRANSPARENT ','{"background":"transparent"}']) {
-    assert.equal(widgetUI.transparentParameter(parameter),true)
-    const card = widgetUI.WidgetCard({snapshot,transparent:true})
-    assert.equal(card.props.background,undefined)
-    assert.equal(card.props.widgetBackground,undefined)
-    assert.equal(nodesOfType(card,'Rectangle').length,0)
-  }
-})
-test('transparent text and income adapt to both light and dark appearance', async () => {
-  const original = await seed()
-  for (const value of ['5285832','-1814421','0']) {
-    const card = widgetUI.WidgetCard({snapshot:{...original,profit:{...original.profit,value}},transparent:true})
-    for (const node of textNodes(card)) {
-      const style = node.props.foregroundStyle
-      assert.ok(contrast(style.light,'#FFFFFF') >= 4.5)
-      assert.ok(contrast(style.dark,'#101A14') >= 4.5)
+  for (const appearance of ['light','dark']) {
+    nativeAppearance=appearance
+    for (const mode of ['system','transparent']) {
+      const card = widgetUI.AdaptiveWidgetCard({snapshot,small:true,theme:mode,now})
+      const theme = presentation.widgetTheme(mode,appearance)
+      assert.equal(textNodes(card).find(n=>texts(n).includes('7日收益')).props.foregroundStyle,theme.text)
+      assert.equal(card.props.background,mode==='transparent'?undefined:theme.base)
+      assert.equal(nodesOfType(card,'Canvas').length,1)
     }
+    const forced = widgetUI.AdaptiveWidgetCard({snapshot,theme:appearance==='light'?'dark':'light',now})
+    assert.equal(forced.props.preferredColorScheme,appearance==='light'?'dark':'light')
   }
 })
 
@@ -632,53 +627,60 @@ test('session renewal retains accumulated history and an account switch clears i
   assert.deepEqual(store.loadSnapshot(another,now).history,[])
   assert.deepEqual(store.loadSnapshot(next,now).history,[])
 })
-test('chart geometry preserves large-integer differences, constant values and actual date gaps', () => {
+test('cumulative amounts retain exact integer precision, including cancellation and zero', () => {
   const base = 10n ** 60n
   const series = history.trendSeries([{day:'2026-10-20',value:String(base)},
-    {day:'2026-10-21',value:String(base+1n)},{day:'2026-10-23',value:String(base+2n)}],now)
-  assert.deepEqual(series.map(p=>p.y),[0,0.5,1])
+    {day:'2026-10-21',value:String(-base+1n)},{day:'2026-10-23',value:'2'}],now)
+  assert.deepEqual(series.map(p=>p.cumulative),[String(base),'1','3'])
   assert.equal(series[2].date-series[1].date,2*86400000)
+  assert.ok(series.every(p=>Number.isFinite(p.y)&&p.y>=0&&p.y<=1))
   const flat = history.trendSeries([{day:'2026-10-21',value:'0'},{day:'2026-10-23',value:'0'}],now)
   assert.deepEqual(flat.map(p=>p.y),[0.5,0.5])
+  assert.deepEqual(flat.map(p=>p.bar),[0,0])
 })
 function nodesOfType(node,type) {
   if (!node || typeof node !== 'object') return []
   if (Array.isArray(node)) return node.flatMap(n=>nodesOfType(n,type))
   return [...(node.type === type ? [node] : []),...nodesOfType(node.props.children,type)]
 }
-test('stock card draws only real dated marks, hides numeric axes and puts latest income below the chart', async () => {
-  const snapshot = await seed()
-  snapshot.history = [{day:'2026-10-20',value:'1200'},{day:'2026-10-21',value:'5285832'}]
+function scenario(values,days=values.map((_,i)=>`2026-10-${String(17+i).padStart(2,'0')}`)) {
+  const snapshot=model.emptySnapshot()
+  snapshot.history=values.map((value,i)=>({day:days[i],value:String(value)}))
+  snapshot.day=days[days.length-1]??null
+  snapshot.profit={value:values.length?String(values[values.length-1]):null,status:'ok',updatedAt:now,message:''}
+  return snapshot
+}
+test('small and medium use independent layouts and the latest daily amount, not the cumulative sum', () => {
+  const snapshot=scenario(['50000','-20000','80000'],['2026-10-20','2026-10-21','2026-10-23'])
   for (const small of [true,false]) {
-    const card = widgetUI.WidgetCard({snapshot,small,now})
-    const chart = nodesOfType(card,'Chart')[0]
-    const line = nodesOfType(card,'LineChart')[0]
-    assert.equal(chart.props.chartXAxis,'hidden')
-    assert.equal(chart.props.chartYAxis,'hidden')
-    assert.equal(chart.props.chartLegend,'hidden')
-    assert.equal(line.props.marks.length,2)
-    assert.ok(line.props.marks.every(mark=>mark.annotation===undefined && mark.interpolationMethod==='monotone'))
-    assert.equal(line.props.marks.filter(mark=>mark.symbol==='circle').length,1)
+    const card=widgetUI.WidgetCard({snapshot,small,now,size:{width:small?158:338,height:158}})
+    const root=card.props.children.flat().filter(Boolean).at(-1)
+    assert.equal(root.type,small?'VStack':'HStack')
+    assert.equal(nodesOfType(card,'Canvas').length,1)
+    assert.ok(texts(card).includes('+80,000'))
+    assert.ok(!texts(card).includes('+110,000'))
+    assert.ok(texts(card).includes('2026.10.23'))
+    assert.ok(texts(card).includes('2涨')&&texts(card).includes('1跌'))
+    assert.ok(texts(card).includes('3天记录'))
     assert.ok(!texts(card).join(' ').match(/三角洲行动|哈夫币|哈弗币/))
-    const content = card.props.children.flat().find(node=>node?.type==='VStack')
-    const rootChildren = content.props.children.flat().filter(Boolean)
-    assert.ok(rootChildren.indexOf(chart)>=0)
-    assert.ok(rootChildren.indexOf(chart)<rootChildren.findIndex(n=>texts(n).includes('+5,285,832')))
-    assert.ok(texts(card).includes('2026.10.21'))
-    assert.ok(!texts(card).includes('1200'))
+    if (small) {
+      const children=root.props.children.flat().filter(Boolean)
+      assert.ok(children.findIndex(n=>n.type==='Canvas')<children.findIndex(n=>texts(n).includes('+80,000')))
+    } else assert.equal(root.props.children.flat().filter(Boolean).length,2)
   }
 })
-test('a single report collapses the chart area instead of floating a lone dot', async () => {
-  const snapshot = await seed()
-  const card = widgetUI.WidgetCard({snapshot,now})
-  assert.equal(nodesOfType(card,'Chart').length,0)
-  assert.ok(texts(card).includes('1天记录'))
-  assert.ok(texts(card).includes('2026.10.21'))
-  assert.ok(texts(card).includes('+5,285,832'))
-  const empty = widgetUI.WidgetCard({snapshot:{...snapshot,history:[]},now})
-  assert.equal(nodesOfType(empty,'Chart').length,0)
-  assert.ok(texts(empty).includes('0天记录'))
-  assert.ok(texts(empty).includes('+5,285,832'))
+test('zero, one, two, three and seven records never fabricate daily bars or dates', () => {
+  for (const count of [0,1,2,3,7]) for (const small of [true,false]) {
+    const snapshot=scenario(['50000','-20000','80000','0','-30000','40000','-5000'].slice(0,count))
+    const series=history.trendSeries(snapshot.history,now)
+    const card=widgetUI.WidgetCard({snapshot,small,now})
+    assert.equal(series.length,count)
+    assert.equal(presentation.trendGeometry(series,small?134:154,small?44:107,small).points.length,count)
+    assert.equal(nodesOfType(card,'Canvas').length,count?1:0)
+    assert.ok(texts(card).includes(`${count}天记录`))
+    if (count) assert.ok(texts(card).includes(model.formatAmount(snapshot.profit.value,true)))
+    else assert.ok(texts(card).includes('暂无近7日记录'))
+  }
 })
 test('overlapping widget and foreground queries merge history without reverting the latest day', async () => {
   await seed()
@@ -715,27 +717,149 @@ test('a real widget entry paints its own stock card even when old transparent fl
   assert.equal(card.type,'ZStack')
   assert.equal(card.props.frame.width,158)
   assert.equal(card.props.frame.height,158)
-  assert.equal(card.props.background,'#F8FAFC')
-  assert.equal(nodesOfType(card,'Rectangle').length,1)
+  assert.equal(card.props.background,'#F0F3F9')
+  assert.equal(nodesOfType(card,'Rectangle').length,2)
   assert.ok(texts(card).includes('7日收益'))
   assert.ok(!texts(card).includes('近7天'))
 })
-test('the card shape remains present when host background modifiers are stripped',async()=>{
-  const snapshot=await seed()
-  const card=widgetUI.WidgetCard({snapshot,now})
-  delete card.props.background
-  delete card.props.widgetBackground
-  const shape=nodesOfType(card,'Rectangle')[0]
-  assert.ok(shape.props.ignoresSafeArea)
-  assert.deepEqual(shape.props.fill.colors,['#FFFFFF','#F4F6FA'])
+test('material and gradient remain if host background modifiers are stripped',async()=>{
+  const card=widgetUI.WidgetCard({snapshot:await seed(),now})
+  delete card.props.background; delete card.props.widgetBackground
+  const layer=card.props.children.flat().filter(Boolean)[0]
+  assert.ok(layer.props.ignoresSafeArea)
+  const rects=nodesOfType(layer,'Rectangle')
+  assert.equal(rects[0].props.fill,'regularMaterial')
+  assert.deepEqual(rects[1].props.fill.colors,presentation.widgetTheme().surface)
 })
-test('the app preview uses native Widget.preview with an explicit stock parameter',async()=>{
+test('both native preview families offer system, light, dark and transparent parameters',async()=>{
   const calls=[]
   nativeWidget.reloadAll=()=>calls.push('reload')
   nativeWidget.preview=async options=>calls.push(options)
-  await widgetUI.previewWidget()
-  assert.equal(calls[0],'reload')
-  assert.equal(calls[1].family,'systemSmall')
-  const config=calls[1].parameters
-  assert.equal(JSON.parse(config.options[config.default]).background,'stock')
+  for (const family of ['systemSmall','systemMedium']) await widgetUI.previewWidget(family)
+  assert.deepEqual([calls[0],calls[2]],['reload','reload'])
+  for (const [index,family] of [[1,'systemSmall'],[3,'systemMedium']]) {
+    assert.equal(calls[index].family,family)
+    const config=calls[index].parameters
+    assert.equal(presentation.themeParameter(config.options[config.default]),'system')
+    assert.deepEqual(Object.values(config.options).map(presentation.themeParameter),['system','light','dark','transparent'])
+  }
+})
+
+test('the requested mixed example rises, falls, rises while the latest label remains daily', () => {
+  const s=scenario(['50000','-20000','80000'],['2026-10-20','2026-10-21','2026-10-23'])
+  const series=history.trendSeries(s.history,now)
+  assert.deepEqual(series.map(p=>p.cumulative),['50000','30000','110000'])
+  assert.deepEqual(presentation.trendStats(series),{count:3,up:2,down:1,zero:0})
+  const g=presentation.trendGeometry(series,154,107)
+  assert.ok(g.origin.y>g.points[0].cy)
+  assert.ok(g.points[0].cy<g.points[1].cy)
+  assert.ok(g.points[1].cy>g.points[2].cy)
+  assert.equal(g.points[2].x-g.points[1].x,2*(g.points[1].x-g.points[0].x))
+  assert.equal(g.points.filter(p=>p.day==='2026-10-22').length,0)
+  assert.equal(s.profit.value,'80000')
+})
+test('all losses, zero days and extreme changes retain bounded finite geometry and truthful signs', () => {
+  const cases=[['-10'],['-10','-20'],['0','0','0'],['10','0','-30'],
+    ['1'+'0'.repeat(400),'-9','-1'+'0'.repeat(400)],['500','-200','800','-100','0','-5','20']]
+  for (const values of cases) for (const small of [true,false]) {
+    const series=history.trendSeries(scenario(values).history,now)
+    const g=presentation.trendGeometry(series,small?134:154,small?44:107,small)
+    let previous=g.origin
+    for (const p of g.points) {
+      assert.ok(Number.isFinite(p.x)&&Number.isFinite(p.cy)&&Number.isFinite(p.barHeight))
+      assert.ok(p.x>=4&&p.x<=(small?134:154)-5&&p.cy>=5&&p.cy<=g.plotBottom)
+      assert.ok(p.sign>0?p.cy<=previous.y:p.sign<0?p.cy>=previous.y:p.cy===previous.y)
+      previous={x:p.x,y:p.cy}
+    }
+    assert.equal(presentation.trendStats(series).zero,values.filter(v=>v==='0').length)
+  }
+})
+function recordCanvas() {
+  const commands=[], state={}
+  const ctx=new Proxy({}, {
+    set(_target,key,value){state[key]=value;return true},
+    get(_target,key){
+      if(key==='createLinearGradient')return (...args)=>({args,stops:[],addColorStop(...stop){this.stops.push(stop)}})
+      return (...args)=>{commands.push({method:key,args,...state})}
+    }
+  })
+  return {ctx,commands}
+}
+test('native canvas paints one honest segment, point and signed bar per real record without numeric labels', () => {
+  for (const count of [1,2,3,7]) for (const small of [true,false]) for (const mode of ['light','dark','transparent']) {
+    const s=scenario(['50000','-20000','80000','0','-30000','40000','-5000'].slice(0,count))
+    const series=history.trendSeries(s.history,now), theme=presentation.widgetTheme(mode)
+    const {ctx,commands}=recordCanvas()
+    trendUI.paintTrend(ctx,{width:small?134:154,height:small?44:107},series,theme,small)
+    assert.equal(commands.filter(c=>c.method==='arc').length,count)
+    assert.equal(commands.filter(c=>c.method==='fillRect').length,count)
+    const curves=commands.filter(c=>c.method==='bezierCurveTo')
+    assert.equal(curves.length,count*2)
+    assert.equal(commands.filter(c=>c.method==='fillText').length<=3,true)
+    assert.ok(commands.filter(c=>c.method==='fillText').every(c=>series.some(p=>model.reportDate(p.day,true)===c.args[0])))
+    for(const c of commands) for(const arg of c.args) if(typeof arg==='number')assert.ok(Number.isFinite(arg))
+    for(const [i,c] of commands.filter(c=>c.method==='fillRect').entries()) {
+      const p=series[i]
+      const rgb=presentation.signColor(p.sign,theme).slice(1).match(/../g).map(v=>parseInt(v,16)).join(',')
+      assert.ok(c.fillStyle.includes(rgb))
+      if(p.sign===0)assert.equal(c.args[3],1.2)
+    }
+    for(const [i,p] of series.entries()) {
+      // Cubic controls have the true endpoint Y values, so they cannot overshoot.
+      const c=curves[i*2]
+      assert.equal(c.args[1],i?curves[(i-1)*2].args[5]:presentation.trendGeometry(series,small?134:154,small?44:107,small).origin.y)
+      assert.equal(c.args[3],c.args[5])
+    }
+  }
+})
+test('long signed amounts stay exact and use a measured font with scaling in both layouts', () => {
+  for(const value of ['999999999999999999','-123456789012345678901234567890'])for(const small of [true,false]) {
+    const s=scenario([value])
+    const card=widgetUI.WidgetCard({snapshot:s,small,now,size:{width:small?158:338,height:158}})
+    const node=textNodes(card).find(n=>texts(n).includes(model.formatAmount(value,true)))
+    assert.ok(node)
+    assert.equal(node.props.lineLimit,1)
+    assert.ok(node.props.minScaleFactor<=0.1)
+    const label=model.formatAmount(value,true), units=[...label].reduce((n,ch)=>n+(ch===','?0.26:ch==='+'||ch==='−'?0.6:0.59),0)
+    assert.ok(node.props.font*units<=(small?134:(338-28-14)*0.48)+0.01)
+  }
+})
+test('older hosts without Canvas keep native cumulative and signed daily charts', () => {
+  scriptingRuntime.Canvas=undefined
+  const s=scenario(['50000','-20000','80000'])
+  const view=trendUI.ProfitTrend({snapshot:s,now})
+  assert.equal(nodesOfType(view,'Canvas').length,0)
+  assert.equal(nodesOfType(view,'LineChart')[0].props.marks.length,3)
+  assert.deepEqual(nodesOfType(view,'LineChart')[0].props.marks.map(p=>p.value),history.trendSeries(s.history,now).map(p=>p.y))
+  const bars=nodesOfType(view,'BarChart')[0].props.marks
+  assert.ok(bars[0].value>0&&bars[1].value<0&&bars[2].value>0)
+  assert.ok(nodesOfType(view,'Chart').every(n=>n.props.chartXAxis==='hidden'&&n.props.chartYAxis==='hidden'))
+})
+test('widget entry honors dark and transparent parameters through real entry execution', {timeout:2000}, async () => {
+  await seed()
+  const entry=path.join(root,'widget.tsx')
+  for (const parameter of ['dark','transparent']) {
+    nativeWidget.parameter=parameter
+    nativeWidget.family='systemMedium';nativeWidget.displaySize={width:338,height:158}
+    const shown=new Promise(resolve=>{nativeWidget.present=node=>resolve(node)})
+    delete require.cache[require.resolve(entry)];require(entry)
+    const card=await shown
+    assert.equal(card.props.frame.width,338)
+    assert.equal(card.props.background,parameter==='transparent'?undefined:presentation.widgetTheme('dark').base)
+    assert.ok(texts(card).includes('+5,285,832'))
+  }
+})
+test('offline widget renders the original cached amount and date without any GitHub image dependency', {timeout:2000}, async () => {
+  await seed()
+  const urls=[]
+  transport=async url=>{urls.push(url);throw Error('offline')}
+  const shown=new Promise(resolve=>{nativeWidget.present=node=>resolve(node)})
+  const entry=path.join(root,'widget.tsx')
+  delete require.cache[require.resolve(entry)];require(entry)
+  const card=await shown
+  assert.ok(texts(card).includes('+5,285,832'))
+  assert.ok(texts(card).includes('2026.10.21'))
+  assert.ok(nodesOfType(card,'Rectangle').length)
+  assert.ok(!urls.some(url=>/github|\.png/.test(url)))
+  assert.deepEqual(store.loadSession(),session)
 })

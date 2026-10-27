@@ -17,17 +17,25 @@ export function mergeHistory(raw: unknown, point: ProfitPoint | null, now = Date
   }
   return [...days.values()].sort((a, b) => a.day.localeCompare(b.day))
 }
-/** Normalize only chart geometry; retain exact integer text for monetary labels. */
+/** Cumulative geometry includes a zero origin, not a synthetic daily record. */
 export function trendSeries(raw: unknown, now = Date.now()) {
   const points = mergeHistory(raw, null, now)
   if (!points.length) return []
-  const values = points.map(point => BigInt(point.value))
-  const min = values.reduce((a, b) => a < b ? a : b)
-  const max = values.reduce((a, b) => a > b ? a : b)
+  let total = 0n
+  const daily = points.map(point => BigInt(point.value))
+  const values = daily.map(value => total += value)
+  const min = values.reduce((a, b) => a < b ? a : b, 0n)
+  const max = values.reduce((a, b) => a > b ? a : b, 0n)
   const span = max - min
+  const largest = daily.reduce((a, b) => a > (b < 0n ? -b : b) ? a : (b < 0n ? -b : b), 0n)
+  const normalize = (value: bigint) => span === 0n ? 0.5 : Number((value - min) * 1000000n / span) / 1000000
   return points.map((point, index) => ({
-    day: point.day,
+    ...point,
     date: new Date(`${point.day}T00:00:00+08:00`),
-    y: span === 0n ? 0.5 : Number((values[index] - min) * 1000000n / span) / 1000000,
+    cumulative: String(values[index]),
+    sign: daily[index] > 0n ? 1 : daily[index] < 0n ? -1 : 0,
+    y: normalize(values[index]),
+    originY: normalize(0n),
+    bar: largest === 0n ? 0 : Number(daily[index] * 1000000n / largest) / 1000000,
   }))
 }

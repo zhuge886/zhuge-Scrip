@@ -86,15 +86,17 @@ function Dashboard() {
           <HStack spacing={12} padding={15} frame={{ maxWidth: "infinity" }} background={palette.panel} clipShape={{ type: "rect", cornerRadius: 17 }}>
             <Image systemName="square.grid.2x2" font={16} foregroundStyle={palette.accent} />
             <VStack alignment="leading" spacing={4}>
-              <Text font={13} fontWeight="medium" foregroundStyle={palette.ink}>预览桌面组件</Text>
-              <Text font={10} foregroundStyle={palette.muted}>{`原生小号预览 · ${WIDGET_RELEASE}`}</Text>
+              <Text font={13} fontWeight="medium" foregroundStyle={palette.ink}>预览小号组件</Text>
+              <Text font={10} foregroundStyle={palette.muted}>{`原生预览 · ${WIDGET_RELEASE}`}</Text>
             </VStack>
             <Spacer />
             <Image systemName="chevron.right" font={10} foregroundStyle={palette.muted} />
           </HStack>
         </Button>
+        <Button title="预览中号组件" font={12} foregroundStyle={palette.accent}
+          action={() => run(() => previewWidget("systemMedium"))} disabled={busy} />
         <Button title="添加与更新说明" font={11} foregroundStyle={palette.accent} action={() => Dialog.alert({
-          title: "桌面组件", message: "更新时覆盖原项目，再运行“刷新收益”。\n\n若桌面仍是白底“近7天”，长按小组件 → 编辑小组件 → 重新选择本次更新的“三角洲收益”；必要时移除旧组件再添加。可先点“预览桌面组件”核对原生样式。\n\n默认使用浅灰白卡片，盈利红、亏损绿。需要透明时，在小组件参数中填 transparent。收益不足2天时收起图表，不生成假折线。",
+          title: "桌面组件", message: "覆盖更新原项目后运行“刷新收益”，登录与历史保留。\n\n小号纵向排版，中号左右分栏。折线为近7个自然日有效记录的累计收益，柱形为单日盈亏；大字仍显示最新单日收益。没有记录的日期不补零。\n\n默认跟随系统。小组件参数可填 light、dark 或 transparent；原生预览也可切换主题。系统未提供桌面模糊时使用冷白或深灰底板。\n\n若桌面仍是旧版，长按组件 → 编辑 → 重新选择更新后的脚本。先用小号 / 中号原生预览确认版本。",
         })} />
         <HStack>
           <Text font={9} foregroundStyle={palette.muted}>本人账号 · 数据保存在本机</Text>

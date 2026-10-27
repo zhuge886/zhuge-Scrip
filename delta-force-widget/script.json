@@ -1,9 +1,9 @@
 {
   "name": "三角洲收益",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "icon": "chart.line.uptrend.xyaxis",
   "color": "blue",
-  "description": "股市风格白灰收益卡片，盈利红、亏损绿，展示近7天走势和最近收益；含原生桌面预览。",
+  "description": "轻磨砂收益组件，小中号独立布局，近7日真实累计走势与每日盈亏；支持系统、浅色、深色、透明主题。",
   "localizedNames": {
     "zh": "三角洲收益"
   },

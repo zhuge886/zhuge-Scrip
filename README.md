@@ -9,7 +9,7 @@
 | 功能 | 版本 | 用途 | 远程导入 | 使用说明 |
 | --- | --- | --- | --- | --- |
 | 电量监控 | 1.1.1 | 中文电量界面、简洁桌面圆环与百分比、标准蓝牙配件按需读取 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget) | [查看说明](battery-widget/README.md) |
-| 三角洲收益 | 1.6.0 | 股市风格白灰卡片、盈利红 / 亏损绿、原生预览与7天曲线 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
+| 三角洲收益 | 1.7.0 | 轻磨砂小中号布局、真实累计曲线与每日盈亏、明暗 / 透明主题 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
 | 网上国网·手动户号 | 1.4.0 | 北京15家公司选择与有限自动尝试、可停止、保存成功组合；真实余额待验证 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
 
 ## 远程导入链接（点击代码块右上角即可复制）
@@ -39,7 +39,7 @@ https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget
 https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget
 ```
 
-在 **Scripting → 导入远程脚本** 中粘贴，确认名称 **三角洲收益**、版本 **1.6.0**。按股市参考图改为浅灰白卡片、黑灰文字、盈利红 / 亏损绿，曲线使用同色浅渐变。保留单日紧凑布局、7天历史、登录续期及原生桌面预览。55 项模拟检查通过，手机显示请用应用内原生预览核对。
+在 **Scripting → 导入远程脚本** 中粘贴，确认名称 **三角洲收益**、版本 **1.7.0**。按最新效果图重做轻磨砂底板：小号纵向、中号左右分栏，真实累计曲线搭配每日红涨绿跌柱，大字保持最新单日收益。支持跟随系统、浅色、深色和透明主题；登录、续期及7天历史保留。62 项模拟检查通过，手机显示请用两种尺寸的原生预览确认。
 
 [使用说明](delta-force-widget/README.md) · [接口分析](delta-force-widget/API.md) · [验证记录](delta-force-widget/VERIFICATION.md)
 
@@ -90,5 +90,4 @@ zhuge-Scrip/
 4. 需要安装器或开发检查时，分别放入 `installers/<功能目录名>.tsx` 和 `verification/<功能目录名>/`。
 
 正式导入链接统一使用 `main` 分支下的功能目录，避免把整个多功能仓库作为单个脚本导入。
-
 
