@@ -1,20 +1,26 @@
-# 1.5.1 查询错误处理与诊断
+# 1.5.2 空 common 的成功响应
 
-## 本次修复
+## 本次修复依据
 
-1.5.0 先要求响应具有 SDK 成功结构，导致 `{code: 101001, message: "…"}` 这类没有 `data` 的错误丢失了原状态和说明。1.5.1 先识别外层错误、`data.srvrt` 网关错误及 `data.common` 业务错误，再验证成功金额结构。未知结构只提供诊断，不自动解释成金额。
+用户提供的1.5.1诊断显示外层 `code` 为数字 `0`，说明“成功”，`data` 是对象，`data.common` 为 `null`，`data.data` 为对象。该诊断没有内层身份或金额值，不能把内层对象直接视为可用金额。
 
-两个匿名空参数请求的解密后错误见 [payment-gateway-errors.json](../verification/sgcc-widget/payment-gateway-errors.json)。没有使用真实户号、账号或登录凭证。它们是错误分支的实际样本，不是用户截图响应的抓包。
+在官方 Android 3.2.3 的 `EleUtils.objectSuccess(ObjectApiResponse, boolean, Context)` 中，`getCommon()` 返回空时会继续检查外层状态，`code = 0` 返回成功；`-200/-201` 走会话过期。`ObjectApiUtils.getData` 再读取 `data.data`。
 
-每次交费请求在本地保存一份固定字段类型与短状态码报告。设置页面提供“复制查询诊断”，不导出响应内容、动态字段名、请求或个人资料。诊断存储失败不影响查询。原始完整响应不会保存到脚本存储。
+1.5.2 因此允许明确外层 `0` 搭配空/缺失的 `common`，继续进入单户资料校验。原先 `MCA00000` 的业务成功分支保留，显式业务或网关错误仍优先拒绝；非零或缺失外层状态不能仅凭 `common` 为空通过。类型错误的 `common` 也不视为缺失。
 
-## 当前接入限制
+来源记录见 [payment-null-common.json](../verification/sgcc-widget/payment-null-common.json)。测试把用户观察到的外层结构与合成的有效/无效单户资料组合，不冒充真实金额响应。
 
-进一步核对官方安装包发现 `ThreeAppConfigUtils.setPayLiteHelper` 向 SDK 传入 `host` 和 `newGate1`，后者在默认环境为 `https://csc-service.sgcc.com.cn:28002`；`RetrofitUtils` 也带有这个默认网关。单户刷新使用的 `La/d` 从 `SdkCoreHelper.getURL()` 取实际地址；原生初始化中的最终映射仍未完整核对。
+## 诊断内容
 
-`La/d$a.intercept` 还设置 SDK 的 `h`、`y`、`deviceInfo`、`sessionId` 和 `t` 请求头。现有代码仍通过原 App 的 `28630` 网关发出请求，未完整实现这些 SDK 会话初始化资料；本次没有猜测其值，也没有仅凭静态 URL 自动改端口重试。
+报告保留固定字段的类型、短状态码，新增内层 `POWER_USER_ID`、`PROVINCE_CODE`、`POWER_USER_TYPE`、`PROMPT_STATUS`、金额字段等的类型。身份结果仅输出 `match/mismatch/missing/masked/invalid` 等分类，计费方式及确认状态也只输出固定分类，不记录对应字段值。
 
-因此，**单户刷新路径和金额字段有静态依据，完整的未绑定查询链路仍未验证成功**。手机诊断用于区分实际网关错误与数据层级问题，不应把离线成功样本当成真实权限或接入成功的证据。
+设置页面提供“复制查询诊断”。查询前清除旧报告，每次交费响应或异常生成报告；可选诊断存储失败不影响查询。完整响应、请求、姓名、住址、金额和登录信息不写入诊断。
+
+## 小程序与历史户号
+
+官方使用指引支持手机号登录后为未绑定户号交费，App 交费列表包含绑定与历史查询户号两类。它们不等于登录用户资料中的 `powerUserList`。SDK 也存在单独的交费列表查询；本次修复不新增调用，不把添加户号流程当作自动查询回退。具体来源与限制见 [研究记录](RESEARCH.md)。
+
+截图仅展示连接主机/端口及传输路径，不能据此得出小程序的业务路径、请求体、登录票据或金额字段。当前响应已经有明确外层成功，不依据旧的匿名 `101001` 错误样本推断用户这次是网关故障，也不凭域名修改端口。
 
 ## 原问题
 
@@ -24,7 +30,7 @@
 
 来源为[国网官方下载页](https://osg-static.sgcc.com.cn/app/download/index.html)提供的 [Android 安装包](https://osg-static.sgcc.com.cn/app/upgrade/wsgw_android.apk)。本轮实际下载版本是 **3.2.3**，SDK 版本 `1.2024.09.25.01`，包摘要和类/方法出处见 [来源记录](../verification/sgcc-widget/payment-contract.json)。仓库不包含 APK 或反编译源码。
 
-在 `IService.queryEleInfoSingle` 和 `SingleElecIndexPresenter.refreshELeListItem` 中核对到：
+在 `IService.queryEleInfoSingle` 和 `SingleElecIndexPresenter.refreshELeListItem` 中核对到单户刷新相对路径；当前脚本通过既有 App 网关发送：
 
 ```text
 POST https://csc-service.sgcc.com.cn:28630/emss-eaa-payelec-front/member/p1/f04

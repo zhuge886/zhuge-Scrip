@@ -193,7 +193,7 @@ module.exports = async ({ check, runtime, configure, mockSession, account, textO
   await check('unknown success-shaped envelopes remain failures with useful server text and diagnostic guidance', () => {
     const { parsePaymentBalance } = runtime().load('api/payment')
     for (const value of [{ code: 0, message: 'upstream-shape-change', data: response().data.data }, { code: 1, data: { srvrt: { resultCode: '0000' }, bizrt: response().data } }]) {
-      assert.throws(() => parsePaymentBalance(value, account()), (e) => e.code === 'payment_response' && /复制查询诊断/.test(e.message))
+      assert.throws(() => parsePaymentBalance(value, account()), (e) => e.code === 'payment_response' && /复制查询诊断|单户金额资料/.test(e.message))
     }
   })
   await check('diagnostic records fixed field types and status codes without arbitrary keys or personal values', () => {
@@ -257,6 +257,68 @@ module.exports = async ({ check, runtime, configure, mockSession, account, textO
     }
     const button = find(view); assert.ok(button)
     await button.props.action(); assert.equal(copied, report)
+  })
+  await check('the observed code-zero/null-common shape accepts verified synthetic money including real zero', () => {
+    const r = runtime(), { parsePaymentBalance } = r.load('api/payment')
+    for (const [amount, expected] of [['12345',123.45],['0',0]]) {
+      const value = response({ AVALIABLE_BALANCE: amount }); value.data.common = null
+      const raw = parsePaymentBalance(value, account())
+      assert.equal(raw.eleBill.sumMoney, expected); assert.equal(raw.householdVerified, true)
+      assert.equal(r.load('data').normalize(raw).balanceLabel, '电费余额')
+    }
+  })
+  await check('omitted common also uses explicit outer zero while the nested success protocol remains valid', () => {
+    const { parsePaymentBalance } = runtime().load('api/payment'), value = response()
+    delete value.data.common
+    assert.equal(parsePaymentBalance(value, account()).eleBill.sumMoney, 123.45)
+    value.code = '0'; assert.equal(parsePaymentBalance(value, account()).eleBill.sumMoney, 123.45)
+    assert.equal(parsePaymentBalance(response(), account()).eleBill.sumMoney, 123.45)
+  })
+  await check('absent common cannot authorize a nonzero, missing or malformed outer status', () => {
+    const { parsePaymentBalance } = runtime().load('api/payment')
+    for (const code of [1,101001,-200,undefined,null,true,{},'']) {
+      const value = response(); value.data.common = null; value.code = code
+      assert.throws(() => parsePaymentBalance(value, account()))
+    }
+    for (const common of [{},'MCA00000',[],{ repcd: null },{ repcd: 0 }]) {
+      const value = response(); value.data.common = common
+      assert.throws(() => parsePaymentBalance(value, account()), (e) => e.code === 'payment_response')
+    }
+  })
+  await check('null common still requires matching identity, clear verification and valid money fields', () => {
+    const { parsePaymentBalance } = runtime().load('api/payment')
+    for (const [patch,code] of [[{ POWER_USER_ID: '0007654321' },'identity_mismatch'],
+      [{ PROVINCE_CODE: '32101' },'identity_mismatch'],[{ POWER_USER_ID: '000***4567' },'identity_mismatch'],
+      [{ PROMPT_STATUS: '2' },'payment_verification'],[{ IS_REAL_NAME_DISPLAY: '1' },'payment_verification'],
+      [{ AVALIABLE_BALANCE: '' },'empty_balance'],[{ POWER_USER_TYPE: 'unknown' },'payment_response']]) {
+      const value = response(patch); value.data.common = null
+      assert.throws(() => parsePaymentBalance(value, account()), (e) => e.code === code)
+    }
+    const error = response({}, 'AUTH_EXPIRED')
+    assert.throws(() => parsePaymentBalance(error, account()), (e) => e.code === 'payment_AUTH_EXPIRED')
+  })
+  await check('automatic manual query saves a null-common response only after matching its complete target', async () => {
+    const r = runtime(), { store, vendor, key } = setup(r)
+    vendor.SgApp.prototype.authed = async () => { const value = response(); value.data.common = null; return value }
+    const out = await r.load('api/client').getData({ force: true, discover: true })
+    assert.equal(out.list[0].eleBill.sumMoney, 123.45); assert.equal(store.loadCache().sourceKey, key)
+    assert.equal(store.loadResolution().account.src, '0001234567')
+    const report = JSON.parse(store.loadQueryDiagnostic())
+    assert.equal(report.schema['data.common'], 'null'); assert.equal(report.outcome, 'success')
+    assert.equal(report.checks.household, 'match'); assert.equal(report.checks.province, 'match')
+  })
+  await check('extended row diagnostics expose field types and identity checks without their private values', () => {
+    const r = runtime(), { paymentDiagnostic } = r.load('api/diagnostics')
+    const value = response({ POWER_USER_NAME: 'private-name', POWER_USER_ADDR: 'private-address' }); value.data.common = null
+    const report = paymentDiagnostic(value, 'success', undefined, account()), parsed = JSON.parse(report)
+    assert.equal(parsed.version, '1.5.2'); assert.equal(parsed.schema['row.POWER_USER_ID'], 'string')
+    assert.equal(parsed.schema['row.AVALIABLE_BALANCE'], 'string'); assert.equal(parsed.checks.billingType, 'prepaid')
+    assert.equal(parsed.checks.household, 'match'); assert.equal(parsed.checks.province, 'match')
+    assert.equal(parsed.checks.prompt, 'ready')
+    assert.doesNotMatch(report, /0001234567|11102|12345|opaque-payment-id|private-name|private-address/)
+    const empty = JSON.parse(paymentDiagnostic({ code: 0, data: { common: null, data: {} } }, 'error', 'payment_response', account()))
+    assert.equal(empty.checks.household, 'missing'); assert.equal(empty.checks.billingType, 'unknown')
+    assert.equal(empty.schema['row.TOTAL_PAY_BREACH'], 'undefined')
   })
   for (const family of ['systemSmall','systemMedium','accessoryRectangular','accessoryCircular','accessoryInline']) {
     await check(`payment amount labels and fen conversion are retained in ${family}`, async () => {

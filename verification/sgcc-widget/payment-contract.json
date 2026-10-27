@@ -81,7 +81,9 @@
       "ObjectApiUtils.getCommon",
       "ObjectApiUtils.getData"
     ],
-    "success": "ObjectApiResponse code=0 or common.repcd=MCA00000; implementation also rejects explicit business errors"
+    "success": "Explicit outer code 0 permits null or absent common, or common.repcd MCA00000 succeeds; explicit business errors are still rejected",
+    "commonOptionalWhenOuterCodeZero": true,
+    "nullCommonSource": "EleUtils.objectSuccess null-common branch reaches outer code check; ObjectApiUtils.getData reads nested data.data"
   },
   "scope": {
     "implemented": [

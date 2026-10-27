@@ -1,0 +1,23 @@
+{
+  "scope": "User-provided diagnostic shape; no household, credentials, amount or inner field values were supplied or retained",
+  "observed": {
+    "topCode": 0,
+    "topMessage": "成功",
+    "dataType": "object",
+    "dataCommonType": "null",
+    "dataDataType": "object"
+  },
+  "sdkEvidence": {
+    "apkSource": "https://osg-static.sgcc.com.cn/app/upgrade/wsgw_android.apk",
+    "version": "3.2.3",
+    "method": "com.htjc.pay.lite.moudle.utils.EleUtils.objectSuccess(ObjectApiResponse, boolean, Context)",
+    "nullCommonBranch": "When getCommon is null, execution reaches the outer code check",
+    "outerCodeRule": "code 0 returns success; -200 and -201 return expired-session failure",
+    "interpretation": "common is optional for an explicitly successful outer envelope. Actual row identity, confirmation state and amount still require validation."
+  },
+  "limitations": [
+    "The diagnostic did not reveal the contents of data.data",
+    "Tests combine the observed outer shape with synthetic valid or invalid rows",
+    "No real household amount query was performed in this change"
+  ]
+}

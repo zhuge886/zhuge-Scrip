@@ -65,13 +65,16 @@ export function parsePaymentBalance(envelope: unknown, account: PowerAccount): R
   if (common && typeof common.repcd === 'string' && code && code !== 'MCA00000') {
     fail(`payment_${diagnosticCode(code)}`, `交费查询未完成（${paymentErrorMessage(code)}）：${message || '请在官方 App 检查交费查询状态'}`)
   }
+  const commonAbsent = !!result && result.common == null
+  const commonValid = !!common && typeof common.repcd === 'string'
   if (!outer || !Object.prototype.hasOwnProperty.call(outer, 'code') ||
-      outer.code == null || !result || !common || typeof common.repcd !== 'string') {
+      !['number', 'string'].includes(typeof outer.code) || !result ||
+      (!commonValid && !(commonAbsent && topCode === '0'))) {
     fail('payment_response', `交费响应结构不兼容，未保存本次结果。${message ? `服务端说明：${message}。` : ''}请点「复制查询诊断」反馈`)
   }
-  // EleUtils.objectSuccess accepts MCA00000 or outer code 0; never accept a business error.
-  if (['-200', '-201'].includes(topCode) ||
-      (code !== 'MCA00000' && !(topCode === '0' && code === ''))) {
+  // EleUtils.objectSuccess falls back to outer code 0 when getCommon() is null.
+  // Null/absent common is valid only with explicit outer success, never by itself.
+  if (code !== 'MCA00000' && !(topCode === '0' && (commonAbsent || code === ''))) {
     const status = code || topCode
     fail(`payment_${status}`, `交费查询未完成${status ? `（${paymentErrorMessage(status)}）` : ''}：${message || '请在官方 App 检查该户号的交费查询状态'}`)
   }
@@ -117,11 +120,11 @@ export async function queryPaymentBalance(app: PaymentApp, account: PowerAccount
     response = await app.authed(PAYMENT_QUERY_PATH,
       () => paymentPayload(account, app.sess?.token || ''), { raw: true })
     const result = parsePaymentBalance(response, account)
-    saveQueryDiagnostic(paymentDiagnostic(response, 'success'))
+    saveQueryDiagnostic(paymentDiagnostic(response, 'success', undefined, account))
     return result
   } catch (error) {
     const e = error as { code?: unknown; message?: unknown }
-    saveQueryDiagnostic(paymentDiagnostic(response, 'error', e?.code))
+    saveQueryDiagnostic(paymentDiagnostic(response, 'error', e?.code, account))
     const message = paymentErrorMessage(e?.message || error)
     throw Object.assign(new Error(`其他户号交费查询失败：${message}`), { code: e?.code || 'payment_query' })
   }

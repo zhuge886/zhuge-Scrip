@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- |
 | 电量监控 | 1.1.1 | 中文电量界面、简洁桌面圆环与百分比、标准蓝牙配件按需读取 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/battery-widget) | [查看说明](battery-widget/README.md) |
 | 三角洲收益 | 1.7.0 | 轻磨砂小中号布局、真实累计曲线与每日盈亏、明暗 / 透明主题 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget) | [查看说明](delta-force-widget/README.md) |
-| 网上国网·手动户号 | 1.5.1 | 交费服务错误显示与可复制脱敏诊断；未绑定查询链路仍待完善 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
+| 网上国网·手动户号 | 1.5.2 | 兼容空 common 的交费成功响应，补充身份与金额字段诊断 | [打开导入目录](https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget) | [查看说明](sgcc-widget/README.md) |
 
 ## 远程导入链接（点击代码块右上角即可复制）
 
@@ -49,7 +49,7 @@ https://github.com/zhuge886/zhuge-Scrip/tree/main/delta-force-widget
 https://github.com/zhuge886/zhuge-Scrip/tree/main/sgcc-widget
 ```
 
-更新到 **1.5.1**，修复交费服务错误被误报为“未返回业务状态”，先显示实际网关/业务错误；新增“复制查询诊断”，仅复制版本、状态码和固定字段类型。类型检查及89项离线检查通过。**未绑定查询链路仍未验证成功，SDK 网关和会话初始化还需完善；诊断用于继续定位，不代表已查通。**
+更新到 **1.5.2**，根据实际诊断及官方 SDK 规则，修复外层 `code: 0`、`data.common: null` 的成功响应被误拒。补充内层字段类型和身份匹配诊断，保留户号/地区及金额校验。类型检查及95项离线检查通过，**真实金额仍待手机复测**。小程序与历史交费户号的可借用信息见 [研究记录](sgcc-widget/RESEARCH.md)。
 
 [使用说明](sgcc-widget/README.md) · [接口说明](sgcc-widget/API.md) · [验证记录](sgcc-widget/VERIFICATION.md)
 
@@ -72,7 +72,7 @@ zhuge-Scrip/
 ├── installers/
 │   └── battery-widget.tsx            # 电量监控可选安装器
 ├── sgcc-widget/                      # 网上国网·手动户号：独立 Scripting 项目
-│   ├── script.json                   # 版本 1.5.1，交费服务错误与脱敏诊断
+│   ├── script.json                   # 版本 1.5.2，兼容空 common 的成功响应
 │   ├── index.tsx                     # 登录、手动户号资料与查询结果
 │   ├── widget.tsx                    # 余额与用电信息组件
 │   └── README.md                     # 使用步骤与接口限制
